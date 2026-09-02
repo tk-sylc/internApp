@@ -134,6 +134,13 @@ const REQUEST_TYPES = {
         required: true,
       },
       {
+        name: 'deviceName',
+        label: '機器名',
+        type: 'text',
+        placeholder: '例：USB-C LANアダプター、CAT6 LANケーブル',
+        required: true,
+      },
+      {
         name: 'quantity',
         label: '必要個数',
         type: 'number',
@@ -179,7 +186,7 @@ const REQUEST_TYPES = {
     fields: [
       {
         name: 'os',
-        label: '希望OS',
+        label: 'OS',
         type: 'select',
         options: ['iOS', 'Android', '指定なし'],
         required: true,
@@ -193,7 +200,7 @@ const REQUEST_TYPES = {
       },
       {
         name: 'model',
-        label: '希望機種',
+        label: '機種',
         type: 'text',
         placeholder: '例：iPhone 16、指定なし',
         required: true,
@@ -206,13 +213,20 @@ const REQUEST_TYPES = {
         placeholder: '1',
         required: true,
       },
-      { name: 'deliveryDate', label: '希望納期', type: 'date', required: true },
+      { name: 'deliveryDate', label: '購入日', type: 'date', required: true },
       {
-        name: 'budget',
-        label: '予算上限（円）',
-        type: 'number',
-        min: '0',
-        placeholder: '例：120000',
+        name: 'storage',
+        label: '容量',
+        type: 'select',
+        options: ['64GB', '128GB', '256GB', '512GB', '指定なし'],
+        required: true,
+      },
+      {
+        name: 'simRequired',
+        label: 'SIMの有無',
+        type: 'select',
+        options: ['あり', 'なし'],
+        required: true,
       },
       {
         name: 'purpose',
