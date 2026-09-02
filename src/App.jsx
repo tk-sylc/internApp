@@ -6,12 +6,15 @@ import {
   ChevronRight,
   CircleCheck,
   Info,
+  KeyRound,
   Laptop,
+  LogIn,
   Network,
   PackageCheck,
   ShieldCheck,
   Smartphone,
   Usb,
+  UserRound,
 } from 'lucide-react'
 import './App.css'
 
@@ -20,101 +23,73 @@ const REQUEST_TYPES = {
     title: 'PC貸出',
     formTitle: 'PC貸出申請',
     description: '業務用ノート・デスクトップPC',
-    lead: '利用期間と、業務に必要なPCの仕様を入力してください。',
+    lead: '申請者と貸出対象のPC、利用情報を入力してください。',
     category: '貸出',
     tone: 'blue',
     icon: Laptop,
     fields: [
       {
-        name: 'pcType',
-        label: 'PC種別',
-        type: 'select',
-        options: ['ノートPC', 'デスクトップPC', 'どちらでも可'],
+        name: 'applicantName',
+        label: '氏名',
+        type: 'text',
+        placeholder: '例：山田 太郎',
         required: true,
       },
       {
-        name: 'os',
-        label: '希望OS',
-        type: 'select',
-        options: ['Windows', 'macOS', '指定なし'],
+        name: 'managementNumber',
+        label: '管理番号',
+        type: 'text',
+        placeholder: '例：PC-01234',
         required: true,
       },
       { name: 'startDate', label: '利用開始日', type: 'date', required: true },
-      { name: 'returnDate', label: '返却予定日', type: 'date', required: true },
       {
         name: 'location',
-        label: '主な利用場所',
+        label: '利用場所',
         type: 'text',
         placeholder: '例：東京本社、在宅勤務',
         required: true,
-        fullWidth: true,
-      },
-      {
-        name: 'purpose',
-        label: '利用目的',
-        type: 'textarea',
-        placeholder: '担当業務や必要なソフトウェアなどを入力してください',
-        required: true,
-        fullWidth: true,
-      },
-      {
-        name: 'notes',
-        label: '必要な付属品・備考',
-        type: 'textarea',
-        placeholder: '例：マウス、ACアダプター、外部モニター',
-        fullWidth: true,
       },
     ],
   },
   memory: {
-    title: 'USBメモリ貸出',
-    formTitle: 'USBメモリ貸出申請',
-    description: '暗号化対応の業務用USBメモリ',
-    lead: '必要な容量と利用期間、取り扱うデータについて入力してください。',
+    title: '外部記憶装置貸出',
+    formTitle: '外部記憶装置貸出申請',
+    description: 'USBメモリや外付けストレージの貸出申請',
+    lead: '貸し出す外部記憶装置と利用情報を入力してください。',
     category: '貸出',
     tone: 'teal',
     icon: Usb,
     fields: [
       {
+        name: 'applicantName',
+        label: '氏名',
+        type: 'text',
+        placeholder: '例：山田 太郎',
+        required: true,
+      },
+      {
+        name: 'deviceName',
+        label: '機器名',
+        type: 'text',
+        placeholder: '例：USBメモリ、外付けSSD',
+        required: true,
+      },
+      {
         name: 'capacity',
-        label: '希望容量',
-        type: 'select',
-        options: ['16GB', '32GB', '64GB', '128GB', '指定なし'],
+        label: '容量',
+        type: 'text',
+        placeholder: '例：64GB、1TB',
         required: true,
       },
       {
-        name: 'quantity',
-        label: '必要個数',
-        type: 'number',
-        min: '1',
-        placeholder: '1',
+        name: 'location',
+        label: '場所',
+        type: 'text',
+        placeholder: '例：東京本社、第2会議室',
         required: true,
       },
-      { name: 'startDate', label: '利用開始日', type: 'date', required: true },
-      { name: 'returnDate', label: '返却予定日', type: 'date', required: true },
-      {
-        name: 'dataType',
-        label: '保存するデータの種類',
-        type: 'select',
-        options: ['社内資料', '顧客提出用データ', 'イベント・会議資料', 'その他'],
-        required: true,
-        fullWidth: true,
-      },
-      {
-        name: 'purpose',
-        label: '利用目的',
-        type: 'textarea',
-        placeholder: '利用する業務と理由を入力してください',
-        required: true,
-        fullWidth: true,
-      },
-      {
-        name: 'notes',
-        label: '備考',
-        type: 'textarea',
-        placeholder: '補足事項があれば入力してください',
-        fullWidth: true,
-      },
+      { name: 'loanDate', label: '貸し出し日', type: 'date', required: true },
     ],
   },
   lan: {
@@ -247,6 +222,30 @@ const REQUEST_TYPES = {
   },
 }
 
+const APPLICANT_FIELDS = [
+  {
+    name: 'requesterName',
+    label: '氏名',
+    type: 'text',
+    placeholder: '例：山田 太郎',
+    required: true,
+  },
+  {
+    name: 'department',
+    label: '所属部署',
+    type: 'text',
+    placeholder: '例：営業部',
+    required: true,
+  },
+  {
+    name: 'employeeNumber',
+    label: '社員番号',
+    type: 'text',
+    placeholder: '例：EMP-0124',
+    required: true,
+  },
+]
+
 function FormField({ field }) {
   const fieldId = `field-${field.name}`
   const className = field.fullWidth ? 'form-field form-field--full' : 'form-field'
@@ -291,7 +290,74 @@ function FormField({ field }) {
   )
 }
 
-function AppHeader({ onHome }) {
+function Login({ onLogin }) {
+  return (
+    <main id="main-content" className="login-page">
+      <section className="login-card" aria-labelledby="login-title">
+        <div className="login-brand">
+          <span className="brand-mark" aria-hidden="true">
+            <PackageCheck size={25} strokeWidth={2.2} />
+          </span>
+          <div className="brand-copy">
+            <strong>Asset Desk</strong>
+            <span>社内資産申請ポータル</span>
+          </div>
+        </div>
+
+        <div className="login-heading">
+          <span className="section-kicker">WELCOME BACK</span>
+          <h1 id="login-title">ログイン</h1>
+          <p>ログイン名とパスワードを入力してください。</p>
+        </div>
+
+        <form className="login-form" onSubmit={onLogin}>
+          <div className="login-field">
+            <label htmlFor="login-name">ログイン名</label>
+            <div className="login-input">
+              <UserRound size={18} aria-hidden="true" />
+              <input
+                id="login-name"
+                name="loginName"
+                type="text"
+                autoComplete="username"
+                placeholder="ログイン名を入力"
+                required
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="login-field">
+            <label htmlFor="login-password">パスワード</label>
+            <div className="login-input">
+              <KeyRound size={18} aria-hidden="true" />
+              <input
+                id="login-password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="パスワードを入力"
+                required
+              />
+            </div>
+          </div>
+
+          <button className="primary-button login-button" type="submit">
+            ログイン
+            <LogIn size={18} aria-hidden="true" />
+          </button>
+        </form>
+
+        <div className="login-note">
+          <ShieldCheck size={18} aria-hidden="true" />
+          <p>認証情報は安全に取り扱い、他の人と共有しないでください。</p>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function AppHeader({ onHome, userName }) {
   return (
     <header className="app-header">
       <div className="header-inner">
@@ -306,10 +372,10 @@ function AppHeader({ onHome }) {
         </button>
 
         <div className="user-profile" aria-label="ログインユーザー">
-          <span className="user-avatar" aria-hidden="true">山</span>
+          <span className="user-avatar" aria-hidden="true">{userName.charAt(0).toUpperCase()}</span>
           <span className="user-copy">
-            <strong>山田 太郎</strong>
-            <span>営業部</span>
+            <strong>{userName}</strong>
+            <span>ログイン中</span>
           </span>
         </div>
       </div>
@@ -343,13 +409,13 @@ function Stepper({ currentStep }) {
   )
 }
 
-function Home({ onSelect }) {
+function Home({ onSelect, userName }) {
   return (
     <main id="main-content" className="page-container home-page">
       <section className="welcome-panel" aria-labelledby="welcome-title">
         <div className="welcome-copy">
           <span className="eyebrow">EQUIPMENT REQUEST</span>
-          <h1 id="welcome-title">お疲れさまです、山田さん</h1>
+          <h1 id="welcome-title">お疲れさまです、{userName}さん</h1>
           <p>必要な機器・サービスを選択して、申請を始めましょう。</p>
         </div>
         <div className="welcome-status">
@@ -446,22 +512,13 @@ function RequestForm({ request, onBack, onSubmit }) {
               <span className="section-number">01</span>
               <div>
                 <h2 id="applicant-heading">申請者情報</h2>
-                <p>ログイン情報から自動で入力されています。</p>
+                <p><span className="required-dot">*</span> 申請者の情報を入力してください。</p>
               </div>
             </div>
             <div className="applicant-grid">
-              <div>
-                <span>申請者</span>
-                <strong>山田 太郎</strong>
-              </div>
-              <div>
-                <span>所属部署</span>
-                <strong>営業部</strong>
-              </div>
-              <div>
-                <span>社員番号</span>
-                <strong>EMP-0124</strong>
-              </div>
+              {APPLICANT_FIELDS.map((field) => (
+                <FormField key={field.name} field={field} />
+              ))}
             </div>
           </section>
 
@@ -546,18 +603,22 @@ function Complete({ request, onHome }) {
 }
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userName, setUserName] = useState('')
   const [view, setView] = useState('home')
   const [selectedKey, setSelectedKey] = useState(null)
   const selectedRequest = selectedKey ? REQUEST_TYPES[selectedKey] : null
 
   useEffect(() => {
-    const pageTitle = view === 'form' && selectedRequest
+    const pageTitle = !isAuthenticated
+      ? 'ログイン | Asset Desk'
+      : view === 'form' && selectedRequest
       ? `${selectedRequest.formTitle} | Asset Desk`
       : view === 'complete'
         ? '受付完了 | Asset Desk'
         : 'Asset Desk | 社内資産申請'
     document.title = pageTitle
-  }, [selectedRequest, view])
+  }, [isAuthenticated, selectedRequest, view])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -579,11 +640,32 @@ function App() {
     scrollToTop()
   }
 
+  const login = (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    setUserName(String(formData.get('loginName')).trim())
+    setIsAuthenticated(true)
+    scrollToTop()
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="app-shell login-shell">
+        <a className="skip-link" href="#main-content">本文へスキップ</a>
+        <Login onLogin={login} />
+        <footer className="app-footer login-footer">
+          <span>Asset Desk</span>
+          <span>社内資産申請ポータル</span>
+        </footer>
+      </div>
+    )
+  }
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">本文へスキップ</a>
-      <AppHeader onHome={goHome} />
-      {view === 'home' && <Home onSelect={startRequest} />}
+      <AppHeader onHome={goHome} userName={userName} />
+      {view === 'home' && <Home onSelect={startRequest} userName={userName} />}
       {view === 'form' && selectedRequest && (
         <RequestForm request={selectedRequest} onBack={goHome} onSubmit={submitRequest} />
       )}
