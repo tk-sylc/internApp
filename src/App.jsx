@@ -50,6 +50,14 @@ const REQUEST_TYPES = {
         placeholder: '例：東京本社、在宅勤務',
         required: true,
       },
+      {
+        name: 'purpose',
+        label: '利用目的',
+        type: 'textarea',
+        placeholder: 'PCを利用する業務や理由を入力してください',
+        required: true,
+        fullWidth: true,
+      },
     ],
   },
   memory: {
@@ -90,6 +98,14 @@ const REQUEST_TYPES = {
         required: true,
       },
       { name: 'loanDate', label: '貸し出し日', type: 'date', required: true },
+      {
+        name: 'purpose',
+        label: '利用目的',
+        type: 'textarea',
+        placeholder: '外部記憶装置を利用する業務や理由を入力してください',
+        required: true,
+        fullWidth: true,
+      },
     ],
   },
   lan: {
