@@ -16,7 +16,8 @@ class BaseAssetRequestAdmin(admin.ModelAdmin):
         "status",
         "created_at",
     )
-    list_filter = ("status", "created_at")
+    list_editable = ("status",)
+    list_filter = ("status", "department", "created_at")
     search_fields = (
         "created_by__username",
         "requester_name",
@@ -25,6 +26,8 @@ class BaseAssetRequestAdmin(admin.ModelAdmin):
     )
     readonly_fields = ("reference_number", "created_by", "created_at", "updated_at")
     ordering = ("-created_at",)
+    date_hierarchy = "created_at"
+    list_select_related = ("created_by",)
 
     @admin.display(description="受付番号", ordering="id")
     def reference_number(self, obj):
@@ -75,6 +78,7 @@ class PCRequestAdmin(BaseAssetRequestAdmin):
         "applicant_name",
         "management_number",
     )
+    list_filter = BaseAssetRequestAdmin.list_filter + ("start_date",)
 
 
 @admin.register(SmartphoneRequest)
@@ -85,7 +89,13 @@ class SmartphoneRequestAdmin(BaseAssetRequestAdmin):
         "quantity",
         "purchase_date",
     )
-    list_filter = BaseAssetRequestAdmin.list_filter + ("os", "line_type")
+    list_filter = BaseAssetRequestAdmin.list_filter + (
+        "os",
+        "line_type",
+        "storage",
+        "sim_required",
+        "purchase_date",
+    )
     search_fields = BaseAssetRequestAdmin.search_fields + ("model_name",)
 
 
@@ -100,6 +110,7 @@ class ExternalStorageRequestAdmin(BaseAssetRequestAdmin):
         "applicant_name",
         "device_name",
     )
+    list_filter = BaseAssetRequestAdmin.list_filter + ("loan_date",)
 
 
 @admin.register(LANRequest)
@@ -111,5 +122,9 @@ class LANRequestAdmin(BaseAssetRequestAdmin):
         "start_date",
         "return_date",
     )
-    list_filter = BaseAssetRequestAdmin.list_filter + ("device_type",)
+    list_filter = BaseAssetRequestAdmin.list_filter + (
+        "device_type",
+        "start_date",
+        "return_date",
+    )
     search_fields = BaseAssetRequestAdmin.search_fields + ("device_name", "location")

@@ -1,4 +1,6 @@
-# Django backend
+# Asset Desk Django backend
+
+プロジェクト全体のセットアップ、API、テスト手順はルートの `README.md` を参照してください。
 
 ## Start the development server
 
@@ -10,6 +12,8 @@ cd django-project
 ```
 
 The development server will be available at <http://127.0.0.1:8000/>.
+
+React画面は別ターミナルで起動し、<http://127.0.0.1:5173/> を開きます。Djangoのルート `/` に画面はありません。
 
 Stop it with `Ctrl+C`.
 

@@ -12,6 +12,7 @@ from .models import (
     ExternalStorageRequest,
     LANRequest,
     PCRequest,
+    RequestStatus,
     SmartphoneRequest,
 )
 
@@ -65,6 +66,38 @@ class ReferenceNumberAdminTests(APITestCase):
 
         self.assertQuerySetEqual(queryset, [pc_request])
         self.assertFalse(use_distinct)
+
+    def test_status_can_be_edited_from_admin_list(self):
+        model_admin = PCRequestAdmin(PCRequest, AdminSite())
+
+        self.assertIn("status", model_admin.list_editable)
+
+
+class RequestStatusModelTests(APITestCase):
+    def test_status_update_is_persisted(self):
+        user = get_user_model().objects.create_user(
+            username="status-user",
+            password="Test-password-123!",
+        )
+        pc_request = PCRequest.objects.create(
+            created_by=user,
+            requester_name="状態更新テスト",
+            department="情報システム部",
+            employee_number="STATUS-001",
+            applicant_name="状態更新テスト",
+            management_number="PC-STATUS-001",
+            start_date=timezone.localdate(),
+            location="東京本社",
+            purpose="申請状態の更新確認",
+        )
+
+        self.assertEqual(pc_request.status, RequestStatus.PENDING)
+
+        pc_request.status = RequestStatus.APPROVED
+        pc_request.save(update_fields=["status"])
+        pc_request.refresh_from_db()
+
+        self.assertEqual(pc_request.status, RequestStatus.APPROVED)
 
 
 class PCRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
