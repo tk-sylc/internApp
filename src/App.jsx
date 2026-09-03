@@ -1,18 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
   ChevronRight,
+  CircleAlert,
   CircleCheck,
+  ClipboardCheck,
+  FilePenLine,
   Info,
   KeyRound,
   Laptop,
+  LoaderCircle,
   LogIn,
   Network,
   PackageCheck,
   ShieldCheck,
   Smartphone,
+  Trash2,
   Usb,
   UserRound,
 } from 'lucide-react'
@@ -30,9 +35,10 @@ const REQUEST_TYPES = {
     fields: [
       {
         name: 'applicantName',
-        label: '氏名',
+        label: '利用者氏名',
         type: 'text',
         placeholder: '例：山田 太郎',
+        hint: '実際にPCを利用する方の氏名',
         required: true,
       },
       {
@@ -42,7 +48,7 @@ const REQUEST_TYPES = {
         placeholder: '例：PC-01234',
         required: true,
       },
-      { name: 'startDate', label: '利用開始日', type: 'date', required: true },
+      { name: 'startDate', label: '利用開始希望日', type: 'date', required: true },
       {
         name: 'location',
         label: '利用場所',
@@ -71,9 +77,10 @@ const REQUEST_TYPES = {
     fields: [
       {
         name: 'applicantName',
-        label: '氏名',
+        label: '利用者氏名',
         type: 'text',
         placeholder: '例：山田 太郎',
+        hint: '実際に機器を利用する方の氏名',
         required: true,
       },
       {
@@ -97,7 +104,7 @@ const REQUEST_TYPES = {
         placeholder: '例：東京本社、第2会議室',
         required: true,
       },
-      { name: 'loanDate', label: '貸し出し日', type: 'date', required: true },
+      { name: 'loanDate', label: '貸出希望日', type: 'date', required: true },
       {
         name: 'purpose',
         label: '利用目的',
@@ -139,7 +146,7 @@ const REQUEST_TYPES = {
         placeholder: '1',
         required: true,
       },
-      { name: 'startDate', label: '利用開始日', type: 'date', required: true },
+      { name: 'startDate', label: '利用開始希望日', type: 'date', required: true },
       { name: 'returnDate', label: '返却予定日', type: 'date', required: true },
       {
         name: 'location',
@@ -204,7 +211,7 @@ const REQUEST_TYPES = {
         placeholder: '1',
         required: true,
       },
-      { name: 'deliveryDate', label: '購入日', type: 'date', required: true },
+      { name: 'deliveryDate', label: '希望購入日', type: 'date', required: true },
       {
         name: 'storage',
         label: '容量',
@@ -241,9 +248,10 @@ const REQUEST_TYPES = {
 const APPLICANT_FIELDS = [
   {
     name: 'requesterName',
-    label: '氏名',
+    label: '申請者氏名',
     type: 'text',
     placeholder: '例：山田 太郎',
+    hint: 'この申請を行う方の氏名',
     required: true,
   },
   {
@@ -262,9 +270,368 @@ const APPLICANT_FIELDS = [
   },
 ]
 
-function FormField({ field }) {
+const COMMON_API_FIELDS = {
+  requesterName: 'requester_name',
+  department: 'department',
+  employeeNumber: 'employee_number',
+}
+
+const REQUEST_API_CONFIG = {
+  pc: {
+    endpoint: '/api/pc-requests/',
+    fields: {
+      applicantName: 'applicant_name',
+      managementNumber: 'management_number',
+      startDate: 'start_date',
+      location: 'location',
+      purpose: 'purpose',
+    },
+  },
+  memory: {
+    endpoint: '/api/external-storage-requests/',
+    fields: {
+      applicantName: 'applicant_name',
+      deviceName: 'device_name',
+      capacity: 'capacity',
+      location: 'location',
+      loanDate: 'loan_date',
+      purpose: 'purpose',
+    },
+  },
+  lan: {
+    endpoint: '/api/lan-requests/',
+    fields: {
+      deviceType: 'device_type',
+      deviceName: 'device_name',
+      quantity: 'quantity',
+      startDate: 'start_date',
+      returnDate: 'return_date',
+      location: 'location',
+      purpose: 'purpose',
+      notes: 'notes',
+    },
+  },
+  phone: {
+    endpoint: '/api/smartphone-requests/',
+    fields: {
+      os: 'os',
+      lineType: 'line_type',
+      model: 'model_name',
+      quantity: 'quantity',
+      deliveryDate: 'purchase_date',
+      storage: 'storage',
+      simRequired: 'sim_required',
+      purpose: 'purpose',
+      notes: 'notes',
+    },
+  },
+}
+
+const API_FIELD_LABELS = {
+  requester_name: '申請者氏名',
+  department: '所属部署',
+  employee_number: '社員番号',
+  applicant_name: '利用者氏名',
+  management_number: '管理番号',
+  start_date: '利用開始希望日',
+  location: '利用場所',
+  purpose: '利用目的',
+  device_name: '機器名',
+  capacity: '容量',
+  loan_date: '貸出希望日',
+  device_type: '機器種別',
+  quantity: '数量',
+  return_date: '返却予定日',
+  notes: '備考',
+  os: 'OS',
+  line_type: '回線区分',
+  model_name: '機種',
+  purchase_date: '希望購入日',
+  storage: '容量',
+  sim_required: 'SIMの有無',
+  non_field_errors: '入力内容',
+}
+
+const FIELD_MAX_LENGTHS = {
+  requesterName: 100,
+  department: 100,
+  employeeNumber: 50,
+  applicantName: 100,
+  managementNumber: 50,
+  location: 200,
+  deviceName: 100,
+  capacity: 50,
+  model: 100,
+}
+
+const DRAFT_STORAGE_KEY_PREFIX = 'asset-desk-request-draft-v2'
+const REQUEST_TIMEOUT_MS = 15_000
+
+function getRequestFields(request) {
+  return [...APPLICANT_FIELDS, ...request.fields]
+}
+
+function getTodayString() {
+  const now = new Date()
+  const localTime = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+  return localTime.toISOString().slice(0, 10)
+}
+
+function hasDraftValues(values = {}) {
+  return Object.values(values).some((value) => String(value ?? '').trim() !== '')
+}
+
+function getDraftStorageKey(ownerName) {
+  const normalizedOwnerName = String(ownerName ?? '').trim().toLocaleLowerCase('ja-JP')
+  return normalizedOwnerName
+    ? `${DRAFT_STORAGE_KEY_PREFIX}:${encodeURIComponent(normalizedOwnerName)}`
+    : null
+}
+
+function normalizeDraftValues(requestKey, values) {
+  const request = REQUEST_TYPES[requestKey]
+  if (!request || !values || typeof values !== 'object' || Array.isArray(values)) {
+    return null
+  }
+
+  const normalizedValues = {}
+  for (const field of getRequestFields(request)) {
+    const value = values[field.name]
+    if (value === undefined || value === null) {
+      continue
+    }
+    if (!['string', 'number', 'boolean'].includes(typeof value)) {
+      return null
+    }
+    normalizedValues[field.name] = String(value)
+  }
+
+  return normalizedValues
+}
+
+function readRequestDraft(ownerName) {
+  const storageKey = getDraftStorageKey(ownerName)
+  if (!storageKey || typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const rawDraft = window.sessionStorage.getItem(storageKey)
+    if (!rawDraft) {
+      return null
+    }
+
+    const parsedDraft = JSON.parse(rawDraft)
+    const normalizedValues = normalizeDraftValues(parsedDraft?.requestKey, parsedDraft?.values)
+    if (!normalizedValues || !hasDraftValues(normalizedValues)) {
+      window.sessionStorage.removeItem(storageKey)
+      return null
+    }
+
+    const updatedAt = typeof parsedDraft.updatedAt === 'string'
+      && !Number.isNaN(Date.parse(parsedDraft.updatedAt))
+      ? parsedDraft.updatedAt
+      : null
+
+    return {
+      requestKey: parsedDraft.requestKey,
+      values: normalizedValues,
+      updatedAt,
+    }
+  } catch {
+    try {
+      window.sessionStorage.removeItem(storageKey)
+    } catch {
+      // ストレージ自体が利用できない場合は、画面内の状態だけで継続する。
+    }
+    return null
+  }
+}
+
+function storeRequestDraft(ownerName, draft) {
+  const storageKey = getDraftStorageKey(ownerName)
+  if (!storageKey || typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    if (draft && hasDraftValues(draft.values)) {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(draft))
+    } else {
+      window.sessionStorage.removeItem(storageKey)
+    }
+  } catch {
+    // ブラウザでストレージが無効でも、画面内の入力はそのまま利用できる。
+  }
+}
+
+function formatDateValue(value) {
+  const [year, month, day] = String(value).split('-').map(Number)
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return `${year}年${month}月${day}日`
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return '―'
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatFieldValue(field, value) {
+  if (value === undefined || value === null || value === '') {
+    return '未入力'
+  }
+
+  if (field.type === 'date') {
+    return formatDateValue(value)
+  }
+
+  return String(value)
+}
+
+function validateRequestValues(requestKey, request, values) {
+  const errors = {}
+  const today = getTodayString()
+
+  getRequestFields(request).forEach((field) => {
+    const value = values[field.name]
+    const normalizedValue = typeof value === 'string' ? value.trim() : value
+
+    if (
+      field.required
+      && (normalizedValue === '' || normalizedValue === undefined || normalizedValue === null)
+    ) {
+      errors[field.name] = '入力してください。'
+      return
+    }
+
+    const maxLength = FIELD_MAX_LENGTHS[field.name]
+    if (maxLength && typeof normalizedValue === 'string' && normalizedValue.length > maxLength) {
+      errors[field.name] = `${maxLength}文字以内で入力してください。`
+    }
+
+    if (field.type === 'number' && normalizedValue !== '' && normalizedValue !== undefined) {
+      const numericValue = Number(normalizedValue)
+      if (
+        !Number.isFinite(numericValue)
+        || !Number.isInteger(numericValue)
+        || numericValue < Number(field.min ?? 0)
+      ) {
+        errors[field.name] = `${field.min ?? 0}以上の整数で入力してください。`
+      }
+    }
+
+    if (field.type === 'date' && normalizedValue && normalizedValue < today) {
+      errors[field.name] = '本日以降の日付を選択してください。'
+    }
+  })
+
+  if (
+    requestKey === 'lan' &&
+    values.startDate &&
+    values.returnDate &&
+    values.returnDate < values.startDate
+  ) {
+    errors.returnDate = '利用開始希望日以降を選択してください。'
+  }
+
+  return errors
+}
+
+function normalizeFormValue(fieldName, value) {
+  if (fieldName === 'quantity') {
+    return Number(value)
+  }
+
+  if (fieldName === 'simRequired') {
+    return value === 'あり'
+  }
+
+  return typeof value === 'string' ? value.trim() : value
+}
+
+function buildRequestPayload(requestKey, formValues) {
+  const config = REQUEST_API_CONFIG[requestKey]
+  const fields = { ...COMMON_API_FIELDS, ...config.fields }
+
+  return Object.fromEntries(
+    Object.entries(fields).map(([formField, apiField]) => [
+      apiField,
+      normalizeFormValue(formField, formValues[formField]),
+    ]),
+  )
+}
+
+function formatApiErrors(errorBody, statusCode, requestKey) {
+  const fieldErrors = {}
+  const formErrors = []
+  const apiFields = {
+    ...COMMON_API_FIELDS,
+    ...(REQUEST_API_CONFIG[requestKey]?.fields ?? {}),
+  }
+  const apiToFormField = Object.fromEntries(
+    Object.entries(apiFields).map(([formField, apiField]) => [apiField, formField]),
+  )
+
+  if (errorBody && typeof errorBody === 'object' && !Array.isArray(errorBody)) {
+    Object.entries(errorBody).forEach(([fieldName, messages]) => {
+      const messageList = Array.isArray(messages) ? messages : [messages]
+      const message = messageList.map(String).join(' ')
+      const formFieldName = apiToFormField[fieldName]
+
+      if (formFieldName) {
+        fieldErrors[formFieldName] = message
+      } else if (fieldName === 'detail' || fieldName === 'non_field_errors') {
+        formErrors.push(message)
+      } else {
+        const label = API_FIELD_LABELS[fieldName] ?? fieldName
+        formErrors.push(`${label}: ${message}`)
+      }
+    })
+
+    if (Object.keys(fieldErrors).length > 0 || formErrors.length > 0) {
+      return { fieldErrors, formErrors }
+    }
+  }
+
+  return {
+    fieldErrors,
+    formErrors: [
+      `サーバーで申請を受け付けられませんでした（HTTP ${statusCode}）。入力内容を保持したまま再試行できます。`,
+    ],
+  }
+}
+
+function FormField({
+  field,
+  value = '',
+  onChange,
+  error,
+  minimum,
+  disabled = false,
+}) {
   const fieldId = `field-${field.name}`
+  const hintId = field.hint ? `${fieldId}-hint` : undefined
+  const errorId = error ? `${fieldId}-error` : undefined
+  const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined
   const className = field.fullWidth ? 'form-field form-field--full' : 'form-field'
+  const handleChange = (event) => onChange(field.name, event.target.value)
 
   return (
     <div className={className}>
@@ -274,7 +641,16 @@ function FormField({ field }) {
       </label>
 
       {field.type === 'select' ? (
-        <select id={fieldId} name={field.name} required={field.required} defaultValue="">
+        <select
+          id={fieldId}
+          name={field.name}
+          required={field.required}
+          value={value}
+          onChange={handleChange}
+          aria-invalid={Boolean(error)}
+          aria-describedby={describedBy}
+          disabled={disabled}
+        >
           <option value="" disabled>
             選択してください
           </option>
@@ -290,17 +666,40 @@ function FormField({ field }) {
           name={field.name}
           placeholder={field.placeholder}
           required={field.required}
+          value={value}
+          onChange={handleChange}
+          aria-invalid={Boolean(error)}
+          aria-describedby={describedBy}
           rows="4"
+          disabled={disabled}
         />
       ) : (
         <input
           id={fieldId}
           name={field.name}
           type={field.type}
-          min={field.min}
+          min={minimum ?? field.min}
+          step={field.type === 'number' ? '1' : undefined}
+          maxLength={FIELD_MAX_LENGTHS[field.name]}
           placeholder={field.placeholder}
           required={field.required}
+          value={value}
+          onChange={handleChange}
+          aria-invalid={Boolean(error)}
+          aria-describedby={describedBy}
+          disabled={disabled}
         />
+      )}
+      {field.hint && (
+        <span className="field-hint" id={hintId}>
+          {field.hint}
+        </span>
+      )}
+      {error && (
+        <span className="field-error" id={errorId}>
+          <CircleAlert size={15} aria-hidden="true" />
+          {error}
+        </span>
       )}
     </div>
   )
@@ -365,19 +764,25 @@ function Login({ onLogin }) {
         </form>
 
         <div className="login-note">
-          <ShieldCheck size={18} aria-hidden="true" />
-          <p>認証情報は安全に取り扱い、他の人と共有しないでください。</p>
+          <Info size={18} aria-hidden="true" />
+          <p>現在は画面確認用の仮ログインです。パスワード認証はまだ接続されていません。</p>
         </div>
       </section>
     </main>
   )
 }
 
-function AppHeader({ onHome, userName }) {
+function AppHeader({ onHome, userName, navigationDisabled }) {
   return (
     <header className="app-header">
       <div className="header-inner">
-        <button className="brand" type="button" onClick={onHome} aria-label="申請ホームへ戻る">
+        <button
+          className="brand"
+          type="button"
+          onClick={onHome}
+          aria-label="申請ホームへ戻る"
+          disabled={navigationDisabled}
+        >
           <span className="brand-mark" aria-hidden="true">
             <PackageCheck size={22} strokeWidth={2.2} />
           </span>
@@ -391,7 +796,7 @@ function AppHeader({ onHome, userName }) {
           <span className="user-avatar" aria-hidden="true">{userName.charAt(0).toUpperCase()}</span>
           <span className="user-copy">
             <strong>{userName}</strong>
-            <span>ログイン中</span>
+            <span>デモ利用中</span>
           </span>
         </div>
       </div>
@@ -400,7 +805,7 @@ function AppHeader({ onHome, userName }) {
 }
 
 function Stepper({ currentStep }) {
-  const steps = ['項目選択', '詳細入力', '受付完了']
+  const steps = ['項目選択', '詳細入力', '内容確認', '受付完了']
 
   return (
     <ol className="stepper" aria-label="申請の進行状況">
@@ -425,13 +830,25 @@ function Stepper({ currentStep }) {
   )
 }
 
-function Home({ onSelect, userName }) {
+function Home({ onSelect, userName, draft, onResumeDraft, onDiscardDraft }) {
+  const headingRef = useRef(null)
+  const draftRequest = draft ? REQUEST_TYPES[draft.requestKey] : null
+  const draftFields = draftRequest ? getRequestFields(draftRequest) : []
+  const requiredDraftFields = draftFields.filter((field) => field.required)
+  const completedDraftFields = requiredDraftFields.filter(
+    (field) => String(draft.values[field.name] ?? '').trim() !== '',
+  ).length
+
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
   return (
     <main id="main-content" className="page-container home-page">
       <section className="welcome-panel" aria-labelledby="welcome-title">
         <div className="welcome-copy">
           <span className="eyebrow">EQUIPMENT REQUEST</span>
-          <h1 id="welcome-title">お疲れさまです、{userName}さん</h1>
+          <h1 id="welcome-title" ref={headingRef} tabIndex="-1">お疲れさまです、{userName}さん</h1>
           <p>必要な機器・サービスを選択して、申請を始めましょう。</p>
         </div>
         <div className="welcome-status">
@@ -439,6 +856,31 @@ function Home({ onSelect, userName }) {
           <span>申請は約3分で完了します</span>
         </div>
       </section>
+
+      {draftRequest && hasDraftValues(draft.values) && (
+        <section className="draft-panel" aria-labelledby="draft-heading">
+          <span className="draft-panel__icon" aria-hidden="true">
+            <FilePenLine size={22} />
+          </span>
+          <div className="draft-panel__content">
+            <span className="section-kicker">SAVED DRAFT</span>
+            <h2 id="draft-heading">{draftRequest.formTitle}の下書きがあります</h2>
+            <p>
+              必須項目 {completedDraftFields}/{requiredDraftFields.length}件を入力済み
+              {draft.updatedAt ? `・${formatDateTime(draft.updatedAt)}に保存` : ''}
+            </p>
+          </div>
+          <div className="draft-panel__actions">
+            <button className="secondary-button" type="button" onClick={onResumeDraft}>
+              下書きを再開
+            </button>
+            <button className="draft-discard-button" type="button" onClick={onDiscardDraft}>
+              <Trash2 size={16} aria-hidden="true" />
+              破棄
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="request-section" aria-labelledby="request-heading">
         <div className="section-heading">
@@ -491,8 +933,61 @@ function Home({ onSelect, userName }) {
   )
 }
 
-function RequestForm({ request, onBack, onSubmit }) {
+function RequestForm({
+  request,
+  values,
+  onFieldChange,
+  fieldErrors,
+  errorFocusRequest,
+  onBack,
+  onSubmit,
+  submitErrors,
+}) {
   const Icon = request.icon
+  const headingRef = useRef(null)
+  const errorRef = useRef(null)
+  const allFields = getRequestFields(request)
+  const requiredFields = allFields.filter((field) => field.required)
+  const fieldLabels = Object.fromEntries(allFields.map((field) => [field.name, field.label]))
+  const errorEntries = Object.entries(fieldErrors)
+  const filledRequiredFieldCount = requiredFields.filter(
+    (field) => String(values[field.name] ?? '').trim() !== '',
+  ).length
+
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (!errorFocusRequest) {
+      return
+    }
+
+    if (errorFocusRequest.fieldName) {
+      document.getElementById(`field-${errorFocusRequest.fieldName}`)?.focus()
+    } else {
+      errorRef.current?.focus()
+    }
+  }, [errorFocusRequest])
+
+  const renderField = (field) => {
+    const minimum = field.type === 'date'
+      ? field.name === 'returnDate'
+        ? values.startDate || getTodayString()
+        : getTodayString()
+      : undefined
+
+    return (
+      <FormField
+        key={field.name}
+        field={field}
+        value={values[field.name] ?? ''}
+        onChange={onFieldChange}
+        error={fieldErrors[field.name]}
+        minimum={minimum}
+      />
+    )
+  }
 
   return (
     <main id="main-content" className="page-container form-page">
@@ -513,7 +1008,7 @@ function RequestForm({ request, onBack, onSubmit }) {
           </span>
           <div>
             <span className="section-kicker">REQUEST FORM</span>
-            <h1>{request.formTitle}</h1>
+            <h1 ref={headingRef} tabIndex="-1">{request.formTitle}</h1>
             <p>{request.lead}</p>
           </div>
         </div>
@@ -522,7 +1017,30 @@ function RequestForm({ request, onBack, onSubmit }) {
       <Stepper currentStep={2} />
 
       <div className="form-layout">
-        <form className="request-form" onSubmit={onSubmit}>
+        <form className="request-form" onSubmit={onSubmit} noValidate>
+          {(errorEntries.length > 0 || submitErrors.length > 0) && (
+            <div
+              id="request-submit-error"
+              className="form-alert form-alert--top"
+              role="alert"
+              tabIndex="-1"
+              ref={errorRef}
+            >
+              <CircleAlert size={21} aria-hidden="true" />
+              <div>
+                <strong>入力内容を確認してください</strong>
+                <ul>
+                  {errorEntries.map(([fieldName, message]) => (
+                    <li key={fieldName}>{fieldLabels[fieldName] ?? fieldName}：{message}</li>
+                  ))}
+                  {submitErrors.map((errorMessage, index) => (
+                    <li key={`${index}-${errorMessage}`}>{errorMessage}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           <section className="form-section" aria-labelledby="applicant-heading">
             <div className="form-section__heading">
               <span className="section-number">01</span>
@@ -532,9 +1050,7 @@ function RequestForm({ request, onBack, onSubmit }) {
               </div>
             </div>
             <div className="applicant-grid">
-              {APPLICANT_FIELDS.map((field) => (
-                <FormField key={field.name} field={field} />
-              ))}
+              {APPLICANT_FIELDS.map(renderField)}
             </div>
           </section>
 
@@ -547,16 +1063,24 @@ function RequestForm({ request, onBack, onSubmit }) {
               </div>
             </div>
             <div className="form-grid">
-              {request.fields.map((field) => (
-                <FormField key={field.name} field={field} />
-              ))}
+              {request.fields.map(renderField)}
             </div>
           </section>
 
           <div className="form-actions">
-            <button className="secondary-button" type="button" onClick={onBack}>キャンセル</button>
-            <button className="primary-button" type="submit">
-              この内容で申請する
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onBack}
+            >
+              下書き保存して戻る
+            </button>
+            <button
+              className="primary-button"
+              type="submit"
+              aria-describedby={errorEntries.length > 0 || submitErrors.length > 0 ? 'request-submit-error' : undefined}
+            >
+              入力内容を確認
               <ArrowRight size={18} aria-hidden="true" />
             </button>
           </div>
@@ -570,6 +1094,19 @@ function RequestForm({ request, onBack, onSubmit }) {
             <span className="summary-label">選択中の申請</span>
             <strong>{request.title}</strong>
             <span className="summary-category">{request.category}申請</span>
+            <div
+              className="summary-progress"
+              role="progressbar"
+              aria-label="必須項目の入力進捗"
+              aria-valuemin="0"
+              aria-valuemax={requiredFields.length}
+              aria-valuenow={filledRequiredFieldCount}
+            >
+              <span>必須項目 {filledRequiredFieldCount}/{requiredFields.length}件を入力済み</span>
+              <div className="summary-progress__track" aria-hidden="true">
+                <span style={{ width: `${(filledRequiredFieldCount / requiredFields.length) * 100}%` }} />
+              </div>
+            </div>
           </div>
           <div className="help-card">
             <Info size={19} aria-hidden="true" />
@@ -584,29 +1121,198 @@ function RequestForm({ request, onBack, onSubmit }) {
   )
 }
 
-function Complete({ request, onHome }) {
+function ReviewSection({ number, title, fields, values }) {
+  return (
+    <section className="review-section" aria-labelledby={`review-section-${number}`}>
+      <div className="form-section__heading">
+        <span className="section-number">{number}</span>
+        <div>
+          <h2 id={`review-section-${number}`}>{title}</h2>
+          <p>入力内容に誤りがないか確認してください。</p>
+        </div>
+      </div>
+      <dl className="review-grid">
+        {fields.map((field) => (
+          <div className={field.fullWidth ? 'review-item review-item--full' : 'review-item'} key={field.name}>
+            <dt>{field.label}</dt>
+            <dd>{formatFieldValue(field, values[field.name])}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+function RequestConfirmation({
+  request,
+  values,
+  onBack,
+  onSubmit,
+  isSubmitting,
+  submitErrors,
+}) {
   const Icon = request.icon
+  const headingRef = useRef(null)
+  const errorRef = useRef(null)
+
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (submitErrors.length > 0) {
+      errorRef.current?.focus()
+    }
+  }, [submitErrors])
 
   return (
-    <main id="main-content" className="page-container complete-page" aria-live="polite">
+    <main id="main-content" className="page-container confirmation-page">
+      <nav className="breadcrumb" aria-label="パンくずリスト">
+        <button type="button" onClick={onBack} disabled={isSubmitting}>入力画面</button>
+        <ChevronRight size={15} aria-hidden="true" />
+        <span aria-current="page">内容確認</span>
+      </nav>
+
+      <div className="form-page__heading">
+        <button className="back-button" type="button" onClick={onBack} disabled={isSubmitting}>
+          <ArrowLeft size={18} aria-hidden="true" />
+          修正する
+        </button>
+        <div className="title-with-icon">
+          <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
+            <ClipboardCheck size={28} strokeWidth={1.9} />
+          </span>
+          <div>
+            <span className="section-kicker">CONFIRM REQUEST</span>
+            <h1 ref={headingRef} tabIndex="-1">入力内容を確認してください</h1>
+            <p>{request.formTitle}を送信する前の最終確認です。</p>
+          </div>
+        </div>
+      </div>
+
       <Stepper currentStep={3} />
+
+      <div className="confirmation-card" aria-busy={isSubmitting}>
+        {submitErrors.length > 0 && (
+          <div className="form-alert form-alert--confirmation" role="alert" tabIndex="-1" ref={errorRef}>
+            <CircleAlert size={21} aria-hidden="true" />
+            <div>
+              <strong>申請を送信できませんでした</strong>
+              <ul>
+                {submitErrors.map((errorMessage, index) => (
+                  <li key={`${index}-${errorMessage}`}>{errorMessage}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        <div className="confirmation-summary">
+          <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
+            <Icon size={25} strokeWidth={1.9} />
+          </span>
+          <div>
+            <span>申請種別</span>
+            <strong>{request.formTitle}</strong>
+          </div>
+          <span className="summary-category">{request.category}申請</span>
+        </div>
+
+        <ReviewSection number="01" title="申請者情報" fields={APPLICANT_FIELDS} values={values} />
+        <ReviewSection number="02" title="申請内容" fields={request.fields} values={values} />
+
+        <div className="confirmation-note">
+          <Info size={18} aria-hidden="true" />
+          <p>送信後は担当部署が内容を確認します。修正が必要な場合は「入力画面に戻る」を選択してください。</p>
+        </div>
+
+        <div className="confirmation-actions">
+          <span className="visually-hidden" role="status" aria-live="polite">
+            {isSubmitting ? '申請を送信しています。しばらくお待ちください。' : ''}
+          </span>
+          <button className="secondary-button" type="button" onClick={onBack} disabled={isSubmitting}>
+            入力画面に戻る
+          </button>
+          <button className="primary-button" type="button" onClick={onSubmit} disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                送信しています
+                <LoaderCircle className="button-spinner" size={18} aria-hidden="true" />
+              </>
+            ) : (
+              <>
+                この内容で申請する
+                <ArrowRight size={18} aria-hidden="true" />
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function Complete({ request, onHome, submissionResult, submittedValues }) {
+  const Icon = request.icon
+  const headingRef = useRef(null)
+  const referenceNumber = submissionResult?.reference_number
+    ?? (submissionResult?.id ? `#${submissionResult.id}` : '受付済み')
+  const statusLabels = {
+    pending: '申請中',
+    approved: '承認',
+    rejected: '却下',
+  }
+  const statusLabel = statusLabels[submissionResult?.status] ?? '申請中'
+  const requesterName = submittedValues?.requesterName
+    ?? submissionResult?.requester_name
+    ?? '―'
+
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
+  return (
+    <main id="main-content" className="page-container complete-page">
+      <Stepper currentStep={4} />
       <section className="complete-card">
         <span className="complete-icon" aria-hidden="true">
           <CircleCheck size={40} strokeWidth={1.8} />
         </span>
         <span className="section-kicker">REQUEST RECEIVED</span>
-        <h1>申請内容を受け付けました</h1>
-        <p>担当部署で内容を確認します。現在はフロントエンド版のため、入力データは保存されません。</p>
+        <h1 ref={headingRef} tabIndex="-1">申請内容を受け付けました</h1>
+        <p>申請内容は保存されました。担当部署で内容を確認後、申請者へご連絡します。</p>
 
-        <div className="complete-summary">
-          <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
-            <Icon size={23} strokeWidth={1.9} />
-          </span>
-          <div>
-            <span>申請項目</span>
-            <strong>{request.formTitle}</strong>
+        <div className="receipt-card">
+          <div className="receipt-card__header">
+            <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
+              <Icon size={23} strokeWidth={1.9} />
+            </span>
+            <div>
+              <span>受付番号</span>
+              <strong>{referenceNumber}</strong>
+            </div>
+            <span className="status-badge">{statusLabel}</span>
           </div>
-          <span className="demo-badge">デモ受付</span>
+
+          <dl className="receipt-details">
+            <div>
+              <dt>申請項目</dt>
+              <dd>{request.formTitle}</dd>
+            </div>
+            <div>
+              <dt>申請者</dt>
+              <dd>{requesterName}</dd>
+            </div>
+            <div>
+              <dt>受付日時</dt>
+              <dd>{formatDateTime(submissionResult?.created_at)}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="complete-next-step">
+          <Info size={18} aria-hidden="true" />
+          <p>担当部署が内容を確認します。お問い合わせの際は受付番号をお伝えください。</p>
         </div>
 
         <button className="primary-button" type="button" onClick={onHome}>
@@ -623,6 +1329,15 @@ function App() {
   const [userName, setUserName] = useState('')
   const [view, setView] = useState('home')
   const [selectedKey, setSelectedKey] = useState(null)
+  const [draft, setDraft] = useState(null)
+  const [formValues, setFormValues] = useState({})
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [errorFocusRequest, setErrorFocusRequest] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitErrors, setSubmitErrors] = useState([])
+  const [submissionResult, setSubmissionResult] = useState(null)
+  const [submittedValues, setSubmittedValues] = useState(null)
+  const submittingRef = useRef(false)
   const selectedRequest = selectedKey ? REQUEST_TYPES[selectedKey] : null
 
   useEffect(() => {
@@ -630,36 +1345,272 @@ function App() {
       ? 'ログイン | Asset Desk'
       : view === 'form' && selectedRequest
       ? `${selectedRequest.formTitle} | Asset Desk`
+      : view === 'confirm' && selectedRequest
+        ? `申請内容の確認 | ${selectedRequest.formTitle}`
       : view === 'complete'
         ? '受付完了 | Asset Desk'
         : 'Asset Desk | 社内資産申請'
     document.title = pageTitle
   }, [isAuthenticated, selectedRequest, view])
 
-  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
+  const scrollToTop = () => {
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' })
+  }
+
+  const clearDraft = () => {
+    setDraft(null)
+    storeRequestDraft(userName, null)
+  }
+
+  const queueFormErrorFocus = (errors) => {
+    const fieldName = Object.keys(errors)[0]
+    setErrorFocusRequest((currentRequest) => ({
+      sequence: (currentRequest?.sequence ?? 0) + 1,
+      fieldName,
+    }))
+  }
 
   const goHome = () => {
+    if (submittingRef.current) {
+      return
+    }
+
     setView('home')
     setSelectedKey(null)
+    setFormValues({})
+    setFieldErrors({})
+    setErrorFocusRequest(null)
+    setSubmitErrors([])
+    setSubmissionResult(null)
+    setSubmittedValues(null)
     scrollToTop()
   }
 
   const startRequest = (key) => {
+    if (!REQUEST_TYPES[key]) {
+      return
+    }
+
+    const canResumeDraft = draft?.requestKey === key && hasDraftValues(draft.values)
+    if (draft && hasDraftValues(draft.values) && !canResumeDraft) {
+      const shouldDiscard = window.confirm(
+        `${REQUEST_TYPES[draft.requestKey].formTitle}の下書きがあります。下書きを破棄して新しい申請を始めますか？`,
+      )
+      if (!shouldDiscard) {
+        return
+      }
+      clearDraft()
+    }
+
     setSelectedKey(key)
+    setFormValues(canResumeDraft ? { ...draft.values } : {})
+    setFieldErrors({})
+    setErrorFocusRequest(null)
+    setSubmitErrors([])
+    setSubmissionResult(null)
+    setSubmittedValues(null)
     setView('form')
     scrollToTop()
   }
 
-  const submitRequest = (event) => {
-    event.preventDefault()
-    setView('complete')
+  const resumeDraft = () => {
+    if (!draft || !REQUEST_TYPES[draft.requestKey] || !hasDraftValues(draft.values)) {
+      return
+    }
+
+    setSelectedKey(draft.requestKey)
+    setFormValues({ ...draft.values })
+    setFieldErrors({})
+    setErrorFocusRequest(null)
+    setSubmitErrors([])
+    setSubmissionResult(null)
+    setSubmittedValues(null)
+    setView('form')
     scrollToTop()
+  }
+
+  const discardDraft = () => {
+    if (!draft) {
+      return
+    }
+
+    const shouldDiscard = window.confirm('保存されている下書きを破棄しますか？')
+    if (shouldDiscard) {
+      clearDraft()
+    }
+  }
+
+  const handleFieldChange = (fieldName, value) => {
+    const nextValues = { ...formValues, [fieldName]: value }
+    const nextDraft = selectedKey && hasDraftValues(nextValues)
+      ? {
+          requestKey: selectedKey,
+          values: nextValues,
+          updatedAt: new Date().toISOString(),
+        }
+      : null
+
+    setFormValues(nextValues)
+    setDraft(nextDraft)
+    storeRequestDraft(userName, nextDraft)
+    setSubmitErrors([])
+    setFieldErrors((currentErrors) => {
+      if (!currentErrors[fieldName]) {
+        return currentErrors
+      }
+      const nextErrors = { ...currentErrors }
+      delete nextErrors[fieldName]
+      return nextErrors
+    })
+  }
+
+  const reviewRequest = (event) => {
+    event.preventDefault()
+
+    if (!selectedKey || !selectedRequest) {
+      return
+    }
+
+    const normalizedValues = Object.fromEntries(
+      Object.entries(formValues).map(([fieldName, value]) => [
+        fieldName,
+        typeof value === 'string' ? value.trim() : value,
+      ]),
+    )
+    const validationErrors = validateRequestValues(selectedKey, selectedRequest, normalizedValues)
+    const nextDraft = hasDraftValues(normalizedValues)
+      ? {
+          requestKey: selectedKey,
+          values: normalizedValues,
+          updatedAt: new Date().toISOString(),
+        }
+      : null
+
+    setFormValues(normalizedValues)
+    setDraft(nextDraft)
+    storeRequestDraft(userName, nextDraft)
+    setFieldErrors(validationErrors)
+    setSubmitErrors([])
+
+    if (Object.keys(validationErrors).length > 0) {
+      queueFormErrorFocus(validationErrors)
+      return
+    }
+
+    setErrorFocusRequest(null)
+    setView('confirm')
+    scrollToTop()
+  }
+
+  const returnToForm = () => {
+    if (submittingRef.current) {
+      return
+    }
+
+    setSubmitErrors([])
+    setErrorFocusRequest(null)
+    setView('form')
+    scrollToTop()
+  }
+
+  const submitRequest = async () => {
+
+    if (submittingRef.current || !selectedKey || !selectedRequest) {
+      return
+    }
+
+    const validationErrors = validateRequestValues(selectedKey, selectedRequest, formValues)
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors)
+      queueFormErrorFocus(validationErrors)
+      setSubmitErrors([])
+      setView('form')
+      scrollToTop()
+      return
+    }
+
+    const apiConfig = REQUEST_API_CONFIG[selectedKey]
+    if (!apiConfig) {
+      setSubmitErrors(['この申請種別の送信先が見つかりません。'])
+      return
+    }
+
+    const payload = buildRequestPayload(selectedKey, formValues)
+    const abortController = new AbortController()
+    const timeoutId = window.setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS)
+
+    submittingRef.current = true
+    setIsSubmitting(true)
+    setSubmitErrors([])
+
+    try {
+      const response = await fetch(apiConfig.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: abortController.signal,
+      })
+
+      let result = null
+      try {
+        result = await response.json()
+      } catch {
+        // JSONではないエラーレスポンスも、下の共通メッセージで案内する。
+      }
+
+      if (!response.ok) {
+        const apiErrors = formatApiErrors(result, response.status, selectedKey)
+        setFieldErrors(apiErrors.fieldErrors)
+        setSubmitErrors(apiErrors.formErrors)
+        if (Object.keys(apiErrors.fieldErrors).length > 0) {
+          queueFormErrorFocus(apiErrors.fieldErrors)
+          setView('form')
+          scrollToTop()
+        }
+        return
+      }
+
+      const hasValidReceipt = result
+        && typeof result === 'object'
+        && !Array.isArray(result)
+        && typeof result.reference_number === 'string'
+        && result.reference_number.trim() !== ''
+        && typeof result.status === 'string'
+      if (!hasValidReceipt) {
+        setSubmitErrors([
+          'サーバーから受付結果を確認できませんでした。送信済みの可能性があるため、再送せず担当部署へ受付状況を確認してください。',
+        ])
+        return
+      }
+
+      setSubmissionResult(result)
+      setSubmittedValues({ ...formValues })
+      clearDraft()
+      setView('complete')
+      scrollToTop()
+    } catch (error) {
+      console.error('申請APIとの通信に失敗しました', error)
+      setSubmitErrors([
+        error?.name === 'AbortError'
+          ? '15秒以内にサーバーから応答がありませんでした。入力内容は保持されています。再送前に担当部署へ受付状況を確認してください。'
+          : 'サーバーに接続できませんでした。入力内容は保持されています。再送前に担当部署へ受付状況を確認してください。',
+      ])
+    } finally {
+      window.clearTimeout(timeoutId)
+      submittingRef.current = false
+      setIsSubmitting(false)
+    }
   }
 
   const login = (event) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    setUserName(String(formData.get('loginName')).trim())
+    const nextUserName = String(formData.get('loginName')).trim()
+    setUserName(nextUserName)
+    setDraft(readRequestDraft(nextUserName))
     setIsAuthenticated(true)
     scrollToTop()
   }
@@ -680,13 +1631,45 @@ function App() {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">本文へスキップ</a>
-      <AppHeader onHome={goHome} userName={userName} />
-      {view === 'home' && <Home onSelect={startRequest} userName={userName} />}
+      <AppHeader onHome={goHome} userName={userName} navigationDisabled={isSubmitting} />
+      {view === 'home' && (
+        <Home
+          onSelect={startRequest}
+          userName={userName}
+          draft={draft}
+          onResumeDraft={resumeDraft}
+          onDiscardDraft={discardDraft}
+        />
+      )}
       {view === 'form' && selectedRequest && (
-        <RequestForm request={selectedRequest} onBack={goHome} onSubmit={submitRequest} />
+        <RequestForm
+          request={selectedRequest}
+          values={formValues}
+          onFieldChange={handleFieldChange}
+          fieldErrors={fieldErrors}
+          errorFocusRequest={errorFocusRequest}
+          onBack={goHome}
+          onSubmit={reviewRequest}
+          submitErrors={submitErrors}
+        />
+      )}
+      {view === 'confirm' && selectedRequest && (
+        <RequestConfirmation
+          request={selectedRequest}
+          values={formValues}
+          onBack={returnToForm}
+          onSubmit={submitRequest}
+          isSubmitting={isSubmitting}
+          submitErrors={submitErrors}
+        />
       )}
       {view === 'complete' && selectedRequest && (
-        <Complete request={selectedRequest} onHome={goHome} />
+        <Complete
+          request={selectedRequest}
+          onHome={goHome}
+          submissionResult={submissionResult}
+          submittedValues={submittedValues}
+        />
       )}
       <footer className="app-footer">
         <span>Asset Desk</span>

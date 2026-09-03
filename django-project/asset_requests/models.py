@@ -1,5 +1,6 @@
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 
 class RequestStatus(models.TextChoices):
@@ -10,6 +11,8 @@ class RequestStatus(models.TextChoices):
 
 class BaseAssetRequest(models.Model):
     """4種類の申請テーブルで共通して保持する項目。"""
+
+    REFERENCE_PREFIX = "REQ"
 
     requester_name = models.CharField("申請者氏名", max_length=100)
     department = models.CharField("所属部署", max_length=100)
@@ -27,11 +30,22 @@ class BaseAssetRequest(models.Model):
     class Meta:
         abstract = True
 
+    @property
+    def reference_number(self):
+        """モデル種別・申請日・主キーから変更されない受付番号を返す。"""
+        if self.pk is None or self.created_at is None:
+            return ""
+
+        created_date = timezone.localdate(self.created_at)
+        return f"{self.REFERENCE_PREFIX}-{created_date:%Y%m%d}-{self.pk:06d}"
+
     def __str__(self):
         return f"{self.requester_name}（{self.employee_number}）"
 
 
 class PCRequest(BaseAssetRequest):
+    REFERENCE_PREFIX = "PC"
+
     applicant_name = models.CharField("利用者氏名", max_length=100)
     management_number = models.CharField("管理番号", max_length=50, db_index=True)
     start_date = models.DateField("利用開始日")
@@ -46,6 +60,8 @@ class PCRequest(BaseAssetRequest):
 
 
 class SmartphoneRequest(BaseAssetRequest):
+    REFERENCE_PREFIX = "SP"
+
     class OS(models.TextChoices):
         IOS = "iOS", "iOS"
         ANDROID = "Android", "Android"
@@ -87,6 +103,8 @@ class SmartphoneRequest(BaseAssetRequest):
 
 
 class ExternalStorageRequest(BaseAssetRequest):
+    REFERENCE_PREFIX = "EXT"
+
     applicant_name = models.CharField("利用者氏名", max_length=100)
     device_name = models.CharField("機器名", max_length=100)
     capacity = models.CharField("容量", max_length=50)
@@ -102,6 +120,8 @@ class ExternalStorageRequest(BaseAssetRequest):
 
 
 class LANRequest(BaseAssetRequest):
+    REFERENCE_PREFIX = "LAN"
+
     class DeviceType(models.TextChoices):
         LAN_CABLE = "LANケーブル", "LANケーブル"
         USB_LAN_ADAPTER = "USB-LANアダプター", "USB-LANアダプター"
