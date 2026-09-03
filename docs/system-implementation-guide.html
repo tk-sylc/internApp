@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Asset Desk 実装ガイド</title>
+<style>
+@page{size:A4;margin:15mm 14mm 16mm}*{box-sizing:border-box}:root{--ink:#172033;--muted:#5d687b;--line:#dbe2ec;--navy:#17376d;--blue:#2563eb;--pale:#eef5ff;--green:#147d64;--gp:#eaf8f3;--amber:#a75a06;--ap:#fff6e8;--red:#ad2e3b;--rp:#fff0f1}html{background:#e8edf4}body{margin:0 auto;max-width:210mm;background:#fff;color:var(--ink);font-family:"Yu Gothic","Meiryo","Noto Sans JP",sans-serif;font-size:10.2pt;line-height:1.72}h1,h2,h3{line-height:1.35;color:var(--navy);break-after:avoid}h1{font-size:25pt;margin:0 0 6mm}h2{font-size:17pt;border-bottom:2px solid var(--blue);padding-bottom:2mm;margin:9mm 0 4mm}h3{font-size:12.5pt;margin:6mm 0 2mm}p{margin:0 0 3mm}ul,ol{margin:2mm 0 4mm;padding-left:7mm}li{margin-bottom:1.4mm}code{font-family:Consolas,"Cascadia Mono",monospace;color:#163b75}pre{margin:2.5mm 0 4mm;padding:3.5mm;border:1px solid #cbd7e8;border-radius:2mm;background:#f6f8fb;font:8.1pt/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre-wrap;overflow-wrap:anywhere;break-inside:avoid}table{width:100%;border-collapse:collapse;margin:3mm 0 5mm;font-size:9pt}th,td{border:1px solid var(--line);padding:2.2mm 2.5mm;vertical-align:top}th{background:#edf3fb;color:var(--navy);text-align:left}tr{break-inside:avoid}.cover{min-height:266mm;padding:22mm 17mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always;background:linear-gradient(145deg,#10294f 0%,#1d4f91 63%,#eaf3ff 63.2%,#fff 100%);color:#fff}.cover h1{color:#fff;font-size:31pt;letter-spacing:.03em;margin-top:28mm}.cover .sub{font-size:15pt;max-width:140mm}.cover .tag{display:inline-block;border:1px solid #9dc5ff;border-radius:99px;padding:1.5mm 4mm;font-size:9pt}.cover .meta{color:var(--navy);background:rgba(255,255,255,.92);width:max-content;padding:3mm 5mm;border-radius:2mm;box-shadow:0 1mm 4mm rgba(17,42,78,.12)}.cover .meta p:last-child{margin-bottom:0}.content{padding:0 1mm}.chapter{page-break-before:always}.lead{color:var(--muted);font-size:11pt}.kicker{color:var(--blue);font-weight:700;letter-spacing:.12em;font-size:8.5pt}.box{border-left:4px solid var(--blue);background:var(--pale);padding:3mm 4mm;margin:3mm 0 4mm;break-inside:avoid}.box.good{border-color:var(--green);background:var(--gp)}.box.warn{border-color:var(--amber);background:var(--ap)}.box.danger{border-color:var(--red);background:var(--rp)}.box strong{color:var(--navy)}.flow{display:grid;grid-template-columns:1fr 9mm 1fr 9mm 1fr;align-items:center;margin:5mm 0;break-inside:avoid}.flow .node{border:1.5px solid #86a9da;background:#f5f9ff;border-radius:3mm;padding:5mm 2mm;text-align:center;min-height:27mm}.flow .arrow{text-align:center;color:var(--blue);font-size:18pt}.step{display:grid;grid-template-columns:10mm 1fr;gap:3mm;margin:4mm 0;break-inside:avoid}.step-num{width:8mm;height:8mm;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700}.tree{border:1px solid var(--line);background:#fbfcfe;padding:4mm;font-family:Consolas,monospace;font-size:8.8pt;line-height:1.55;white-space:pre;break-inside:avoid}.small{font-size:8.6pt;color:var(--muted)}.footer-note{margin-top:8mm;padding-top:3mm;border-top:1px solid var(--line);color:var(--muted);font-size:8.5pt}@media print{html,body{background:#fff}a{color:inherit;text-decoration:none}}
+</style>
+</head>
+<body><main>
+<section class="cover">
+<div><span class="tag">React + Vite + Django + SQLite</span><h1>Asset Desk<br>実装ガイド</h1><p class="sub">申請画面の入力をDjangoへ送り、SQLiteへ保存し、管理画面で確認できるシステムを自力で組み立てる</p></div>
+<div class="meta"><p>対象プロジェクト：sylc</p><p>作成日：2026年9月3日</p><p>学習用・開発環境向け</p></div>
+</section>
+<div class="content">
+<section>
+<span class="kicker">INTRODUCTION</span><h1>このガイドでできるようになること</h1>
+<p class="lead">完成済みコードの暗記ではなく、入力欄を追加したときに、保存先・通信処理・管理画面・テストまで自分で変更できることを目標にします。</p>
+<div class="box good"><strong>完成形：</strong>ログイン画面から申請種別を選び、申請者情報と申請内容を入力して送信すると、Djangoが検証してSQLiteへ保存します。保存結果はDjango管理画面で検索・確認できます。</div>
+<h2>全体像</h2>
+<div class="flow"><div class="node"><strong>React</strong><br>画面・入力・送信</div><div class="arrow">→</div><div class="node"><strong>Django</strong><br>受付・検証・保存</div><div class="arrow">→</div><div class="node"><strong>SQLite</strong><br>申請データを保持</div></div>
+<p>ブラウザはSQLiteを直接操作しません。ReactがJSONをDjangoへ送り、DjangoのORMがSQLを組み立ててSQLiteを操作します。この役割分担がシステムの中心です。</p>
+<h2>現在の4種類の申請</h2>
+<table><thead><tr><th>種別</th><th>個別入力項目</th><th>保存モデル</th></tr></thead><tbody>
+<tr><td>PC貸出</td><td>氏名、管理番号、使用開始日、利用場所</td><td>PcLoanApplication</td></tr>
+<tr><td>外部記憶装置貸出</td><td>氏名、機器名、容量、場所、貸し出し日</td><td>ExternalStorageLoanApplication</td></tr>
+<tr><td>LAN機器貸出</td><td>機器種別、機器名、利用開始日、返却予定日、利用場所</td><td>LanEquipmentLoanApplication</td></tr>
+<tr><td>スマートフォン購入</td><td>機種、購入日、容量、SIMの有無</td><td>SmartphonePurchaseApplication</td></tr>
+</tbody></table>
+<p>全申請に共通して、申請者氏名・所属部署・社員番号も手動入力します。</p>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 1</span><h1>プロジェクトの構造と準備</h1>
+<div class="tree">sylc/
+├─ src/
+│  ├─ App.jsx              # React画面と送信処理
+│  ├─ App.css              # 画面固有の見た目
+│  └─ index.css            # 全体の基本スタイル
+├─ vite.config.js          # 開発サーバーと /api の転送
+├─ package.json            # React側の依存関係・実行コマンド
+└─ backend/
+   ├─ manage.py            # Django管理コマンドの入口
+   ├─ requirements.txt     # Python依存関係
+   ├─ db.sqlite3           # 実データを保持するDBファイル
+   ├─ config/
+   │  ├─ settings.py       # DB、アプリ、CSRFなどの全体設定
+   │  └─ urls.py           # /admin/ と /api/ の入口
+   └─ applications/
+      ├─ models.py         # テーブル設計
+      ├─ views.py          # JSON受付・検証・保存
+      ├─ urls.py           # API URL登録
+      ├─ admin.py          # 管理画面の表示設定
+      ├─ tests.py          # 自動テスト
+      └─ migrations/       # DB構造の変更履歴</div>
+<h2>最初から作る場合の準備</h2>
+<div class="step"><span class="step-num">1</span><div><strong>React/Viteを用意</strong><pre>npm create vite@latest . -- --template react
+npm install
+npm install lucide-react</pre></div></div>
+<div class="step"><span class="step-num">2</span><div><strong>Django用の仮想環境を用意</strong><pre>mkdir backend
+cd backend
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install "Django&gt;=5.2,&lt;6.0"</pre></div></div>
+<div class="step"><span class="step-num">3</span><div><strong>Djangoプロジェクトとアプリを作る</strong><pre>.\.venv\Scripts\python.exe -m django startproject config .
+.\.venv\Scripts\python.exe manage.py startapp applications</pre></div></div>
+<div class="box warn"><strong>既存プロジェクトでは作成コマンドを再実行しません。</strong>同名ファイルを上書きするおそれがあります。現在は依存関係を復元するだけなら <code>npm install</code> とPython環境の準備を行います。</div>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 2</span><h1>Reactで申請画面を組み立てる</h1>
+<p class="lead"><code>src/App.jsx</code> は、画面遷移、フォーム定義、入力値の収集、Djangoへの送信を担当します。</p>
+<h2>1. 項目をデータとして定義する</h2>
+<p>申請ごとにフォームを複製せず、<code>REQUEST_TYPES</code> に「項目の設計図」を置きます。共通の描画処理がこの配列を読み、inputやselectを生成します。</p>
+<pre>const REQUEST_TYPES = {
+  pc: {
+    title: 'PC貸出',
+    fields: [
+      { name: 'applicantName', label: '氏名', type: 'text', required: true },
+      { name: 'managementNumber', label: '管理番号', type: 'text', required: true },
+      { name: 'startDate', label: '使用開始日', type: 'date', required: true },
+      { name: 'location', label: '利用場所', type: 'text', required: true },
+    ],
+  },
+  // memory, lan, phone も同じ形式で定義
+}</pre>
+<p><code>name</code> は通信で使うキーです。後述するDjangoの対応表と一文字単位で一致させます。</p>
+<h2>2. 申請者情報を共通化する</h2>
+<pre>const APPLICANT_FIELDS = [
+  { name: 'requesterName', label: '氏名', type: 'text', required: true },
+  { name: 'department', label: '所属部署', type: 'text', required: true },
+  { name: 'employeeNumber', label: '社員番号', type: 'text', required: true },
+]</pre>
+<p><code>FormField</code> が項目定義を受け取り、<code>type</code> に応じてinputまたはselectを返します。新しい項目は原則として配列への1件追加で表示できます。</p>
+<h2>3. React内の画面状態</h2>
+<table><thead><tr><th>状態</th><th>意味</th><th>更新タイミング</th></tr></thead><tbody>
+<tr><td>userName</td><td>ログイン画面で入力した名前</td><td>ログインフォーム送信時</td></tr>
+<tr><td>selectedType</td><td>pc / memory / lan / phone</td><td>申請カード選択時</td></tr>
+<tr><td>isComplete</td><td>保存成功画面を表示するか</td><td>Djangoが201を返した後</td></tr>
+<tr><td>isSubmitting</td><td>二重送信を防ぐ通信中フラグ</td><td>送信開始から終了まで</td></tr>
+<tr><td>submitError</td><td>利用者へ見せる失敗理由</td><td>通信または検証失敗時</td></tr>
+</tbody></table>
+<div class="box danger"><strong>現状のログインは画面上のデモです。</strong>未入力を防ぐだけで、Djangoのユーザー認証は行っていません。パスワードは送信・保存されません。本番利用ではDjango認証、HTTPS、ログアウト、権限設計が必要です。</div>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 3</span><h1>Djangoでデータベースを設計する</h1>
+<p class="lead"><code>backend/applications/models.py</code> のモデルは、Pythonで書くデータベースの設計図です。DjangoがこれをSQLiteのテーブルに変換します。</p>
+<h2>共通項目を抽象モデルにする</h2>
+<pre>class BaseApplication(models.Model):
+    requester_name = models.CharField('申請者氏名', max_length=100)
+    department = models.CharField('所属部署', max_length=100)
+    employee_number = models.CharField('社員番号', max_length=30)
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        abstract = True</pre>
+<p><code>abstract = True</code> により、BaseApplication専用テーブルは作られません。各申請モデルに共通列を引き継ぐための設計部品になります。</p>
+<h2>申請種別ごとのモデルを作る</h2>
+<pre>class PcLoanApplication(BaseApplication):
+    applicant_name = models.CharField('氏名', max_length=100)
+    management_number = models.CharField('管理番号', max_length=50)
+    start_date = models.DateField('使用開始日')
+    location = models.CharField('利用場所', max_length=200)
+
+class ExternalStorageLoanApplication(BaseApplication):
+    applicant_name = models.CharField('氏名', max_length=100)
+    device_name = models.CharField('機器名', max_length=100)
+    capacity = models.CharField('容量', max_length=50)
+    location = models.CharField('場所', max_length=200)
+    loan_date = models.DateField('貸し出し日')</pre>
+<table><thead><tr><th>Djangoフィールド</th><th>SQLiteでの意味</th><th>用途</th></tr></thead><tbody>
+<tr><td>CharField</td><td>文字列列</td><td>氏名、番号、場所など</td></tr>
+<tr><td>DateField</td><td>日付列</td><td>使用開始日、貸し出し日など</td></tr>
+<tr><td>DateTimeField</td><td>日時列</td><td>作成・更新日時</td></tr>
+<tr><td>TextChoices</td><td>許容値を限定</td><td>LAN機器種別、容量、SIM有無</td></tr>
+</tbody></table>
+<h2>モデル自身に業務ルールを書く</h2>
+<pre>def clean(self):
+    super().clean()
+    if self.start_date and self.return_date \
+            and self.return_date &lt; self.start_date:
+        raise ValidationError({
+            'return_date': '返却予定日は利用開始日以降にしてください。'
+        })</pre>
+<p>この例はLAN機器の返却予定日が開始日より前になるのを防ぎます。画面側だけでなくモデル側にも書くことで、管理画面や別処理から保存するときも同じルールが働きます。</p>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 4</span><h1>マイグレーションで設計をDBへ反映する</h1>
+<p class="lead">モデルを書いただけではSQLiteのテーブルは変わりません。設計変更を履歴にし、その履歴をDBへ適用するのがマイグレーションです。</p>
+<div class="flow"><div class="node"><strong>models.py</strong><br>Pythonの設計</div><div class="arrow">→</div><div class="node"><strong>migration</strong><br>変更手順</div><div class="arrow">→</div><div class="node"><strong>db.sqlite3</strong><br>実際の表</div></div>
+<pre>cd backend
+.\.venv\Scripts\python.exe manage.py makemigrations
+.\.venv\Scripts\python.exe manage.py migrate</pre>
+<ul><li><code>makemigrations</code>：モデルとの差分を読み、migrationsフォルダに変更手順を作る。</li><li><code>migrate</code>：未適用の変更手順をSQLiteへ実行する。</li></ul>
+<pre># 適用状況
+.\.venv\Scripts\python.exe manage.py showmigrations
+
+# モデルとmigrationに差分がないか
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run</pre>
+<div class="box warn"><strong>db.sqlite3だけを直接編集しない：</strong>チームで同じ構造を再現するには、モデルとmigrationをGitで共有します。通常、個人の実データを含むdb.sqlite3は共有対象から外します。</div>
+<h2>SQLiteとSQLの位置づけ</h2>
+<p><strong>SQL</strong>はデータの追加・検索・更新・削除を指示する言語です。<strong>SQLite</strong>はSQLを理解し、1個のファイルにデータを保存するデータベースソフトです。このシステムではDjango ORMがSQLを自動生成するため、通常はSQLを手書きしません。</p>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 5</span><h1>URLと保存処理を実装する</h1>
+<p class="lead">「URLを登録する」とは、届いたURLと実行するPython関数を対応付けることです。</p>
+<h2>URLを二段階で接続する</h2>
+<pre># backend/config/urls.py
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/', include('applications.urls')),
+]
+
+# backend/applications/urls.py
+urlpatterns = [
+    path('csrf/', csrf_token, name='csrf-token'),
+    path('applications/', create_application, name='create-application'),
+]</pre>
+<p>結果として <code>/api/csrf/</code> はcsrf_token関数へ、<code>/api/applications/</code> はcreate_application関数へ到達します。末尾のスラッシュもReact側と合わせます。</p>
+<h2>React名とDjango名を対応付ける</h2>
+<pre>APPLICATION_SETTINGS = {
+    'pc': {
+        'model': PcLoanApplication,
+        'fields': {
+            'applicantName': 'applicant_name',
+            'managementNumber': 'management_number',
+            'startDate': 'start_date',
+            'location': 'location',
+        },
+    },
+    # memory, lan, phone も定義
+}</pre>
+<p>JavaScriptではcamelCase、Pythonではsnake_caseが一般的です。この辞書は表記を変換し、申請種別ごとに保存モデルを選びます。</p>
+<h2>JSONを検証して保存する</h2>
+<pre>@require_POST
+def create_application(request):
+    payload = json.loads(request.body or '{}')
+    request_type = payload.get('requestType')
+    settings = APPLICATION_SETTINGS.get(request_type)
+
+    model_values = {
+        'requester_name': payload.get('requesterName'),
+        'department': payload.get('department'),
+        'employee_number': payload.get('employeeNumber'),
+    }
+    for frontend_name, model_name in settings['fields'].items():
+        model_values[model_name] = payload.get(frontend_name)
+
+    application = settings['model'](**model_values)
+    application.full_clean()
+    with transaction.atomic():
+        application.save()
+
+    return JsonResponse({'id': application.pk}, status=201)</pre>
+<ol><li>JSONをPythonの辞書へ変換する。</li><li>requestTypeからモデルと項目対応を選ぶ。</li><li>full_clean()で必須、長さ、日付、選択肢、独自ルールを検証する。</li><li>transaction.atomic()内で保存し、途中失敗時の中途半端な更新を防ぐ。</li><li>成功時はHTTP 201とIDを返す。入力不正は400を返す。</li></ol>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 6</span><h1>CSRFで不正送信を防ぐ</h1>
+<p class="lead">CSRFは、利用者がログイン済みのサイトに対して、別サイトから意図しない操作を送らせる攻撃です。DjangoはPOSTに秘密の照合値を要求して防ぎます。</p>
+<h2>正常な送信の順序</h2>
+<ol><li>Reactが <code>GET /api/csrf/</code> を呼ぶ。</li><li>Djangoがブラウザへcsrftoken Cookieを発行する。</li><li>ReactがCookieを読み、POSTのX-CSRFTokenヘッダーへ入れる。</li><li>DjangoがCookieとヘッダーを照合し、一致すれば保存処理へ進む。</li></ol>
+<pre># views.py
+@require_GET
+@ensure_csrf_cookie
+def csrf_token(request):
+    return JsonResponse({'message': 'CSRF Cookieを発行しました。'})
+
+# settings.py
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]</pre>
+<div class="box"><strong>信頼済みOriginとは：</strong>「このURLで動くフロントエンドからの安全なPOSTを受け入れる」という許可リストです。ホスト名、ポート、http/httpsのどれかが違えば別Originです。</div>
+<h2>React側のトークン取得</h2>
+<pre>async function getCsrfToken() {
+  const existingToken = getCookie('csrftoken')
+  if (existingToken) return existingToken
+
+  const response = await fetch('/api/csrf/', {
+    credentials: 'same-origin',
+  })
+  if (!response.ok) {
+    throw new Error('セキュリティ情報を取得できませんでした。')
+  }
+  return getCookie('csrftoken')
+}</pre>
+<p><code>csrf_exempt</code> で保護を外す方法は採用していません。原因を直してCSRF検証を通す方が、安全な設計を維持できます。</p>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 7</span><h1>ViteからDjangoへ通信を転送する</h1>
+<p class="lead">開発中、画面はViteの5173番、保存処理はDjangoの8000番で動きます。Viteのproxyはブラウザの <code>/api</code> 通信をDjangoへ中継します。</p>
+<pre>// vite.config.js
+export default defineConfig({
+  plugins: [react(), sites()],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
+})</pre>
+<div class="flow"><div class="node"><strong>ブラウザ</strong><br>/api/applications/</div><div class="arrow">→</div><div class="node"><strong>Vite :5173</strong><br>/api を中継</div><div class="arrow">→</div><div class="node"><strong>Django :8000</strong><br>保存処理</div></div>
+<ul><li>ReactにDjangoの完全URLを埋め込まず、<code>/api/...</code> と書ける。</li><li>開発時の異なるポート間通信を扱いやすくする。</li><li><code>vite.config.js</code> を変更した後はViteを再起動する。</li></ul>
+<div class="box warn"><strong>proxyは開発用です。</strong>本番ではWebサーバーやホスティング環境で、フロントエンドとDjangoへの経路を別途設定します。</div>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 8</span><h1>submitRequestを非同期処理にする</h1>
+<p class="lead">非同期処理とは、通信完了を待ちながらブラウザ全体を再読み込みせず、成功・失敗に応じて画面だけを更新する処理です。</p>
+<pre>const submitRequest = async (event) =&gt; {
+  event.preventDefault()
+  setIsSubmitting(true)
+  setSubmitError('')
+
+  try {
+    const formValues = Object.fromEntries(new FormData(event.currentTarget))
+    const csrfToken = await getCsrfToken()
+    const response = await fetch('/api/applications/', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+      },
+      body: JSON.stringify({
+        requestType: selectedType,
+        ...formValues,
+      }),
+    })
+
+    const data = await response.json()
+    if (!response.ok) throw new Error(getSubmissionError(data))
+    setSubmissionId(data.id)
+    setIsComplete(true)
+  } catch (error) {
+    setSubmitError(error.message)
+  } finally {
+    setIsSubmitting(false)
+  }
+}</pre>
+<table><thead><tr><th>コード</th><th>役割</th></tr></thead><tbody>
+<tr><td>preventDefault()</td><td>フォーム標準のページ再読み込みを止める</td></tr>
+<tr><td>FormData</td><td>name属性が付いた入力値をまとめて収集する</td></tr>
+<tr><td>await fetch(...)</td><td>HTTP応答が返るまで、この関数内の次処理を待つ</td></tr>
+<tr><td>response.ok</td><td>HTTP 200番台かを判定する</td></tr>
+<tr><td>try / catch</td><td>通信・JSON・サーバーエラーを画面表示へ変換する</td></tr>
+<tr><td>finally</td><td>成功・失敗の両方で通信中状態を解除する</td></tr>
+</tbody></table>
+<p>ボタンを押しただけでは完了扱いにせず、Djangoが保存して201を返した後だけ完了画面へ進めるのが重要です。</p>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 9</span><h1>Django管理画面を有効にする</h1>
+<p class="lead">管理画面はDjango標準機能です。URL、標準アプリ、モデル登録の3点がつながって動きます。</p>
+<pre># config/urls.py
+path('admin/', admin.site.urls)
+
+# applications/admin.py
+@admin.register(PcLoanApplication)
+class PcLoanApplicationAdmin(BaseApplicationAdmin):
+    list_display = (
+        'id', 'management_number', 'applicant_name',
+        'department', 'start_date', 'location', 'created_at',
+    )
+    search_fields = ('requester_name', 'management_number', 'location')
+    list_filter = ('start_date', 'department')</pre>
+<p><code>@admin.register</code> がモデルを管理画面へ登録します。list_displayは一覧列、search_fieldsは検索対象、list_filterは絞り込み項目です。</p>
+<h2>管理者を作成して確認する</h2>
+<pre>cd backend
+.\.venv\Scripts\python.exe manage.py createsuperuser
+.\.venv\Scripts\python.exe manage.py runserver</pre>
+<p>ブラウザで <code>http://127.0.0.1:8000/admin/</code> を開きます。入力した管理者のユーザー名、メールアドレス、ハッシュ化されたパスワードは、標準認証用テーブルとして <code>backend/db.sqlite3</code> に保存されます。</p>
+<div class="box"><strong>パスワード検証もDjango標準機能です。</strong><code>AUTH_PASSWORD_VALIDATORS</code> により、ユーザー名との類似、8文字未満、よくある文字列、数字だけなどが検査されます。平文パスワードはDBへ保存されません。</div>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 10</span><h1>起動と動作確認</h1>
+<p class="lead">DjangoとViteは別々のプロセスです。PowerShellを2つ開いて両方を起動します。</p>
+<h2>PowerShell 1：Django</h2>
+<pre>cd C:\Users\sylc0276\takino\sylc\backend
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py runserver</pre>
+<h2>PowerShell 2：Vite</h2>
+<pre>cd C:\Users\sylc0276\takino\sylc
+npm install
+npm run dev</pre>
+<p>表示されたViteのURL（通常は <code>http://localhost:5173/</code>）をブラウザで開きます。</p>
+<h2>画面からの確認手順</h2>
+<ol><li>ログイン名とパスワードを入力してログインする。</li><li>PC貸出などの申請カードを選ぶ。</li><li>申請者情報と申請内容をすべて入力する。</li><li>「この内容で申請する」を押す。</li><li>完了画面に受付IDが表示されることを確認する。</li><li>Django管理画面を開き、該当申請一覧に同じ内容があることを確認する。</li></ol>
+<h2>ブラウザ開発者ツールで通信を確認</h2>
+<table><thead><tr><th>Network欄</th><th>期待値</th><th>意味</th></tr></thead><tbody>
+<tr><td>GET /api/csrf/</td><td>200</td><td>CSRF Cookieの準備成功</td></tr>
+<tr><td>POST /api/applications/</td><td>201</td><td>検証・保存成功</td></tr>
+<tr><td>Response</td><td>id, requestType, message</td><td>Djangoからの保存結果</td></tr>
+<tr><td>Request Payload</td><td>入力したJSON</td><td>Reactが送った値</td></tr>
+</tbody></table>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 11</span><h1>自動テストと品質確認</h1>
+<p class="lead">目視確認だけでなく、保存と拒否条件をプログラムで繰り返し確認します。</p>
+<pre>cd backend
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+
+cd ..
+npm run lint
+npm run build</pre>
+<table><thead><tr><th>確認</th><th>検出する問題</th></tr></thead><tbody>
+<tr><td>manage.py check</td><td>Django設定やモデル定義の基本的な不整合</td></tr>
+<tr><td>manage.py test</td><td>4申請の保存、必須項目、日付ルール、CSRF拒否</td></tr>
+<tr><td>makemigrations --check</td><td>モデル変更後のmigration作り忘れ</td></tr>
+<tr><td>npm run lint</td><td>JavaScript/Reactコードの規約違反や典型的な誤り</td></tr>
+<tr><td>npm run build</td><td>本番用React資産を生成できるか</td></tr>
+</tbody></table>
+<div class="box good"><strong>良いテストの考え方：</strong>成功例だけでなく、管理番号がない、CSRFトークンがない、返却日が開始日より前など「保存してはいけない例」も確認します。</div>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 12</span><h1>エラーの切り分け方</h1>
+<table><thead><tr><th>症状</th><th>主な原因</th><th>確認・対処</th></tr></thead><tbody>
+<tr><td>sites-vite-pluginを解決できない</td><td>node_modulesに依存パッケージがない</td><td>プロジェクト直下で <code>npm install</code>。package.jsonも確認。</td></tr>
+<tr><td>セキュリティ情報を取得できない</td><td>Django停止、proxy未反映、URL違い</td><td>runserverを確認。Viteを再起動。NetworkでGET /api/csrf/を見る。</td></tr>
+<tr><td>申請を保存できない／403</td><td>CSRFトークン不一致、Origin未許可</td><td>CookieとX-CSRFToken、CSRF_TRUSTED_ORIGINSを確認。</td></tr>
+<tr><td>申請を保存できない／400</td><td>必須値、選択肢、日付などの検証失敗</td><td>NetworkのResponse内fieldsを確認。キー対応を照合。</td></tr>
+<tr><td>no such table</td><td>migration未適用</td><td><code>manage.py migrate</code> を実行。</td></tr>
+<tr><td>管理画面にモデルがない</td><td>admin.pyで未登録</td><td><code>@admin.register(...)</code> とINSTALLED_APPSを確認。</td></tr>
+<tr><td>画面変更が反映されない</td><td>違うGitブランチ、キャッシュ</td><td><code>git branch --show-current</code>、Vite再起動、再読み込み。</td></tr>
+</tbody></table>
+<h2>切り分けの順番</h2>
+<ol><li>Djangoのターミナルに例外やHTTPステータスが出ているか。</li><li>ブラウザのNetworkで、どのリクエストが何番で失敗したか。</li><li>Response本文にDjangoの検証理由があるか。</li><li>Request Payloadのキー名と値が期待どおりか。</li><li>モデル、対応表、Reactのname属性が一致しているか。</li></ol>
+<p>画面のメッセージだけで推測せず、HTTPステータスと送受信内容を見れば問題の層を絞れます。</p>
+</section>
+
+<section class="chapter">
+<span class="kicker">CHAPTER 13</span><h1>新しい申請項目を追加する練習</h1>
+<p class="lead">例としてPC貸出に「返却予定日」を追加する場合、次の順序で変更します。</p>
+<ol><li><strong>画面：</strong><code>REQUEST_TYPES.pc.fields</code> にreturnDateを追加。</li><li><strong>モデル：</strong><code>PcLoanApplication</code> にreturn_dateを追加。</li><li><strong>対応表：</strong><code>'returnDate': 'return_date'</code> を追加。</li><li><strong>DB：</strong>makemigrationsとmigrateを実行。</li><li><strong>管理画面：</strong>list_displayやlist_filterに追加。</li><li><strong>テスト：</strong>正常値の保存と不正値の拒否を追加。</li><li><strong>確認：</strong>Djangoテスト、lint、build、画面送信、管理画面を順に確認。</li></ol>
+<div class="box"><strong>変更の一本線：</strong><code>inputのname</code> → <code>送信JSONのキー</code> → <code>APPLICATION_SETTINGS</code> → <code>モデルのフィールド</code> → <code>SQLiteの列</code>。値が消えたときは、この線を左からたどります。</div>
+<h2>自力実装チェックリスト</h2>
+<ul><li>各ファイルの責任を説明できる。</li><li>新しい入力欄を追加し、対応するモデル列を作れる。</li><li>migrationが必要な理由を説明し、適用できる。</li><li>URLからviewまでの到達経路を説明できる。</li><li>CSRF Cookieとヘッダーの関係を説明できる。</li><li>HTTP 201、400、403の違いをNetworkで判断できる。</li><li>管理画面と自動テストで保存を確認できる。</li></ul>
+</section>
+
+<section class="chapter">
+<span class="kicker">REFERENCE</span><h1>用語集と本番化の注意</h1>
+<table><thead><tr><th>用語</th><th>このシステムでの意味</th></tr></thead><tbody>
+<tr><td>React</td><td>状態に応じてログイン、一覧、入力、完了画面を描画するライブラリ。</td></tr>
+<tr><td>Vite</td><td>Reactの開発サーバーとビルドを担当し、開発中は/apiをDjangoへ転送。</td></tr>
+<tr><td>Django</td><td>URL受付、CSRF、入力検証、ORM、管理画面、認証基盤を提供。</td></tr>
+<tr><td>モデル</td><td>保存項目の型、長さ、選択肢、ルールを表すPythonクラス。</td></tr>
+<tr><td>ORM</td><td>Pythonオブジェクト操作をSQLへ変換する仕組み。</td></tr>
+<tr><td>SQLite</td><td>backend/db.sqlite3という1ファイルで動く開発向けDB。</td></tr>
+<tr><td>API</td><td>ReactとDjangoがJSONでデータを受け渡す窓口。</td></tr>
+<tr><td>CSRF</td><td>第三者サイトからの意図しないPOSTを防ぐ仕組み。</td></tr>
+<tr><td>migration</td><td>モデル変更をDB構造へ再現可能に適用する履歴。</td></tr>
+</tbody></table>
+<h2>本番環境へ進む前に</h2>
+<ul><li><code>DEBUG = False</code>、安全なSECRET_KEY、適切なALLOWED_HOSTSを設定する。</li><li>HTTPSを必須にし、CSRF/Cookieの本番設定を見直す。</li><li>画面だけのログインをDjango認証へ置き換え、権限と操作履歴を設計する。</li><li>個人情報の保存期間、閲覧権限、バックアップ、削除手順を定める。</li><li>規模に応じてPostgreSQLなどのサーバー型DBを検討する。</li><li>Djangoの開発サーバーではなく、本番用構成で配信する。</li></ul>
+<div class="box danger"><strong>この実装は学習・開発用の土台です。</strong>特に現在のログイン画面は本人確認をしていないため、そのまま社内本番システムとして公開しないでください。</div>
+<h2>最後に：実装を理解する最短ルート</h2>
+<p>まずPC貸出だけを対象に、入力 → JSON → view → model → SQLite → adminの一本を自分で再現してください。一本が理解できれば、他の申請は同じ構造の横展開です。機能を追加するたびに正常系と異常系のテストも増やすと、壊れにくいシステムになります。</p>
+<p class="footer-note">対象コード：src/App.jsx、vite.config.js、backend/config、backend/applications ／ 文書：Asset Desk 実装ガイド</p>
+</section>
+</div></main></body></html>

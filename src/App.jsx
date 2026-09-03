@@ -115,14 +115,6 @@ const REQUEST_TYPES = {
         placeholder: '例：USB-C LANアダプター、CAT6 LANケーブル',
         required: true,
       },
-      {
-        name: 'quantity',
-        label: '必要個数',
-        type: 'number',
-        min: '1',
-        placeholder: '1',
-        required: true,
-      },
       { name: 'startDate', label: '利用開始日', type: 'date', required: true },
       { name: 'returnDate', label: '返却予定日', type: 'date', required: true },
       {
@@ -133,59 +125,22 @@ const REQUEST_TYPES = {
         required: true,
         fullWidth: true,
       },
-      {
-        name: 'purpose',
-        label: '利用目的',
-        type: 'textarea',
-        placeholder: '利用する業務と接続予定の機器を入力してください',
-        required: true,
-        fullWidth: true,
-      },
-      {
-        name: 'notes',
-        label: 'ケーブル長・備考',
-        type: 'textarea',
-        placeholder: '例：5m以上を希望',
-        fullWidth: true,
-      },
     ],
   },
   phone: {
     title: 'スマートフォン購入',
     formTitle: 'スマートフォン購入申請',
     description: '業務用端末・回線の購入申請',
-    lead: '希望する端末や回線の条件、業務上の利用目的を入力してください。',
+    lead: '購入する端末の機種、購入日、容量、SIMの有無を入力してください。',
     category: '購入',
     tone: 'coral',
     icon: Smartphone,
     fields: [
       {
-        name: 'os',
-        label: 'OS',
-        type: 'select',
-        options: ['iOS', 'Android', '指定なし'],
-        required: true,
-      },
-      {
-        name: 'lineType',
-        label: '回線区分',
-        type: 'select',
-        options: ['新規契約', '機種変更', '端末のみ購入'],
-        required: true,
-      },
-      {
         name: 'model',
         label: '機種',
         type: 'text',
         placeholder: '例：iPhone 16、指定なし',
-        required: true,
-      },
-      {
-        name: 'quantity',
-        label: '台数',
-        type: 'number',
-        min: '1',
-        placeholder: '1',
         required: true,
       },
       { name: 'deliveryDate', label: '購入日', type: 'date', required: true },
@@ -202,21 +157,6 @@ const REQUEST_TYPES = {
         type: 'select',
         options: ['あり', 'なし'],
         required: true,
-      },
-      {
-        name: 'purpose',
-        label: '利用目的',
-        type: 'textarea',
-        placeholder: '利用者・担当業務・購入が必要な理由を入力してください',
-        required: true,
-        fullWidth: true,
-      },
-      {
-        name: 'notes',
-        label: '希望キャリア・備考',
-        type: 'textarea',
-        placeholder: 'キャリアやSIMの指定などがあれば入力してください',
-        fullWidth: true,
       },
     ],
   },
@@ -246,7 +186,72 @@ const APPLICANT_FIELDS = [
   },
 ]
 
-function FormField({ field }) {
+const DRAFT_STORAGE_KEY_PREFIX = 'asset-desk-request-draft-v1'
+
+function getDraftStorageKey(userName) {
+  return `${DRAFT_STORAGE_KEY_PREFIX}:${userName}`
+}
+
+function loadDraft(userName) {
+  try {
+    const savedDraft = window.sessionStorage.getItem(getDraftStorageKey(userName))
+    if (!savedDraft) return null
+
+    const draft = JSON.parse(savedDraft)
+    if (!REQUEST_TYPES[draft?.requestKey] || !draft.values || typeof draft.values !== 'object') {
+      window.sessionStorage.removeItem(getDraftStorageKey(userName))
+      return null
+    }
+    return draft
+  } catch {
+    window.sessionStorage.removeItem(getDraftStorageKey(userName))
+    return null
+  }
+}
+
+function storeDraft(userName, draft) {
+  const storageKey = getDraftStorageKey(userName)
+  if (draft) {
+    window.sessionStorage.setItem(storageKey, JSON.stringify(draft))
+  } else {
+    window.sessionStorage.removeItem(storageKey)
+  }
+}
+
+function getCookie(name) {
+  const cookie = document.cookie
+    .split('; ')
+    .find((item) => item.startsWith(`${name}=`))
+
+  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : ''
+}
+
+async function getCsrfToken() {
+  const existingToken = getCookie('csrftoken')
+  if (existingToken) return existingToken
+
+  const response = await fetch('/api/csrf/', {
+    credentials: 'same-origin',
+  })
+  if (!response.ok) {
+    throw new Error('セキュリティ情報を取得できませんでした。')
+  }
+
+  const token = getCookie('csrftoken')
+  if (!token) {
+    throw new Error('セキュリティ情報が見つかりませんでした。')
+  }
+  return token
+}
+
+function getSubmissionError(responseData) {
+  if (responseData?.fields) {
+    return Object.values(responseData.fields).flat().join(' ')
+  }
+  return responseData?.error || '申請を保存できませんでした。'
+}
+
+function FormField({ field, value = '', onChange }) {
   const fieldId = `field-${field.name}`
   const className = field.fullWidth ? 'form-field form-field--full' : 'form-field'
 
@@ -258,7 +263,13 @@ function FormField({ field }) {
       </label>
 
       {field.type === 'select' ? (
-        <select id={fieldId} name={field.name} required={field.required} defaultValue="">
+        <select
+          id={fieldId}
+          name={field.name}
+          required={field.required}
+          value={value}
+          onChange={(event) => onChange(field.name, event.target.value)}
+        >
           <option value="" disabled>
             選択してください
           </option>
@@ -275,6 +286,8 @@ function FormField({ field }) {
           placeholder={field.placeholder}
           required={field.required}
           rows="4"
+          value={value}
+          onChange={(event) => onChange(field.name, event.target.value)}
         />
       ) : (
         <input
@@ -284,6 +297,8 @@ function FormField({ field }) {
           min={field.min}
           placeholder={field.placeholder}
           required={field.required}
+          value={value}
+          onChange={(event) => onChange(field.name, event.target.value)}
         />
       )}
     </div>
@@ -384,7 +399,7 @@ function AppHeader({ onHome, userName }) {
 }
 
 function Stepper({ currentStep }) {
-  const steps = ['項目選択', '詳細入力', '受付完了']
+  const steps = ['項目選択', '詳細入力', '内容確認', '受付完了']
 
   return (
     <ol className="stepper" aria-label="申請の進行状況">
@@ -409,7 +424,9 @@ function Stepper({ currentStep }) {
   )
 }
 
-function Home({ onSelect, userName }) {
+function Home({ onSelect, userName, draft, onResumeDraft, onDiscardDraft }) {
+  const draftRequest = draft ? REQUEST_TYPES[draft.requestKey] : null
+
   return (
     <main id="main-content" className="page-container home-page">
       <section className="welcome-panel" aria-labelledby="welcome-title">
@@ -423,6 +440,25 @@ function Home({ onSelect, userName }) {
           <span>申請は約3分で完了します</span>
         </div>
       </section>
+
+      {draftRequest && (
+        <section className="draft-panel" aria-labelledby="draft-heading">
+          <div>
+            <span className="section-kicker">SAVED DRAFT</span>
+            <h2 id="draft-heading">入力途中の申請があります</h2>
+            <p>{draftRequest.formTitle}の下書きを、このブラウザで一時保存しています。</p>
+          </div>
+          <div className="draft-panel__actions">
+            <button className="secondary-button" type="button" onClick={onDiscardDraft}>
+              下書きを破棄
+            </button>
+            <button className="primary-button" type="button" onClick={onResumeDraft}>
+              入力を再開
+              <ArrowRight size={18} aria-hidden="true" />
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="request-section" aria-labelledby="request-heading">
         <div className="section-heading">
@@ -475,7 +511,7 @@ function Home({ onSelect, userName }) {
   )
 }
 
-function RequestForm({ request, onBack, onSubmit }) {
+function RequestForm({ request, onBack, onSubmit, formValues, onFieldChange }) {
   const Icon = request.icon
 
   return (
@@ -517,7 +553,12 @@ function RequestForm({ request, onBack, onSubmit }) {
             </div>
             <div className="applicant-grid">
               {APPLICANT_FIELDS.map((field) => (
-                <FormField key={field.name} field={field} />
+                <FormField
+                  key={field.name}
+                  field={field}
+                  value={formValues[field.name] ?? ''}
+                  onChange={onFieldChange}
+                />
               ))}
             </div>
           </section>
@@ -532,15 +573,26 @@ function RequestForm({ request, onBack, onSubmit }) {
             </div>
             <div className="form-grid">
               {request.fields.map((field) => (
-                <FormField key={field.name} field={field} />
+                <FormField
+                  key={field.name}
+                  field={field}
+                  value={formValues[field.name] ?? ''}
+                  onChange={onFieldChange}
+                />
               ))}
             </div>
           </section>
 
           <div className="form-actions">
-            <button className="secondary-button" type="button" onClick={onBack}>キャンセル</button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onBack}
+            >
+              ホームへ戻る
+            </button>
             <button className="primary-button" type="submit">
-              この内容で申請する
+              入力内容を確認する
               <ArrowRight size={18} aria-hidden="true" />
             </button>
           </div>
@@ -568,19 +620,98 @@ function RequestForm({ request, onBack, onSubmit }) {
   )
 }
 
-function Complete({ request, onHome }) {
+function Confirmation({ request, formValues, onBack, onSubmit, isSubmitting, submitError }) {
+  const Icon = request.icon
+  const sections = [
+    { title: '申請者情報', fields: APPLICANT_FIELDS },
+    { title: '申請内容', fields: request.fields },
+  ]
+
+  return (
+    <main id="main-content" className="page-container form-page confirmation-page">
+      <nav className="breadcrumb" aria-label="パンくずリスト">
+        <span>申請ホーム</span>
+        <ChevronRight size={15} aria-hidden="true" />
+        <span>{request.formTitle}</span>
+        <ChevronRight size={15} aria-hidden="true" />
+        <span aria-current="page">内容確認</span>
+      </nav>
+
+      <div className="form-page__heading">
+        <button className="back-button" type="button" onClick={onBack} disabled={isSubmitting}>
+          <ArrowLeft size={18} aria-hidden="true" />
+          入力画面へ戻る
+        </button>
+        <div className="title-with-icon">
+          <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
+            <Icon size={28} strokeWidth={1.9} />
+          </span>
+          <div>
+            <span className="section-kicker">CONFIRM REQUEST</span>
+            <h1>申請内容の確認</h1>
+            <p>内容に間違いがなければ、申請を送信してください。</p>
+          </div>
+        </div>
+      </div>
+
+      <Stepper currentStep={3} />
+
+      <section className="confirmation-card">
+        <div className="confirmation-request">
+          <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
+            <Icon size={23} strokeWidth={1.9} />
+          </span>
+          <div><span>申請種別</span><strong>{request.formTitle}</strong></div>
+        </div>
+
+        {sections.map((section) => (
+          <section className="confirmation-section" key={section.title}>
+            <h2>{section.title}</h2>
+            <dl className="confirmation-list">
+              {section.fields.map((field) => (
+                <div key={field.name}>
+                  <dt>{field.label}</dt>
+                  <dd>{formValues[field.name] || '—'}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+
+        {submitError && (
+          <div className="submit-error confirmation-error" role="alert">
+            <Info size={18} aria-hidden="true" />
+            <span>{submitError}</span>
+          </div>
+        )}
+
+        <div className="form-actions">
+          <button className="secondary-button" type="button" onClick={onBack} disabled={isSubmitting}>
+            入力内容を修正する
+          </button>
+          <button className="primary-button" type="button" onClick={onSubmit} disabled={isSubmitting}>
+            {isSubmitting ? '保存中...' : 'この内容で申請する'}
+            <ArrowRight size={18} aria-hidden="true" />
+          </button>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function Complete({ request, onHome, submissionId }) {
   const Icon = request.icon
 
   return (
     <main id="main-content" className="page-container complete-page" aria-live="polite">
-      <Stepper currentStep={3} />
+      <Stepper currentStep={4} />
       <section className="complete-card">
         <span className="complete-icon" aria-hidden="true">
           <CircleCheck size={40} strokeWidth={1.8} />
         </span>
         <span className="section-kicker">REQUEST RECEIVED</span>
         <h1>申請内容を受け付けました</h1>
-        <p>担当部署で内容を確認します。現在はフロントエンド版のため、入力データは保存されません。</p>
+        <p>入力データを保存しました。担当部署で内容を確認後、ご連絡します。</p>
 
         <div className="complete-summary">
           <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
@@ -590,7 +721,7 @@ function Complete({ request, onHome }) {
             <span>申請項目</span>
             <strong>{request.formTitle}</strong>
           </div>
-          <span className="demo-badge">デモ受付</span>
+          <span className="demo-badge">受付番号 #{submissionId}</span>
         </div>
 
         <button className="primary-button" type="button" onClick={onHome}>
@@ -607,6 +738,11 @@ function App() {
   const [userName, setUserName] = useState('')
   const [view, setView] = useState('home')
   const [selectedKey, setSelectedKey] = useState(null)
+  const [draft, setDraft] = useState(null)
+  const [formValues, setFormValues] = useState({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const [submissionId, setSubmissionId] = useState(null)
   const selectedRequest = selectedKey ? REQUEST_TYPES[selectedKey] : null
 
   useEffect(() => {
@@ -614,6 +750,8 @@ function App() {
       ? 'ログイン | Asset Desk'
       : view === 'form' && selectedRequest
       ? `${selectedRequest.formTitle} | Asset Desk`
+      : view === 'confirm' && selectedRequest
+        ? `申請内容の確認 | ${selectedRequest.formTitle}`
       : view === 'complete'
         ? '受付完了 | Asset Desk'
         : 'Asset Desk | 社内資産申請'
@@ -622,28 +760,131 @@ function App() {
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
+  const clearDraft = () => {
+    setDraft(null)
+    storeDraft(userName, null)
+  }
+
   const goHome = () => {
     setView('home')
     setSelectedKey(null)
+    setFormValues({})
+    setSubmitError('')
+    setSubmissionId(null)
     scrollToTop()
   }
 
   const startRequest = (key) => {
+    if (!REQUEST_TYPES[key]) return
+
+    const canResume = draft?.requestKey === key
+    if (draft && !canResume) {
+      const shouldDiscard = window.confirm(
+        `${REQUEST_TYPES[draft.requestKey].formTitle}の下書きがあります。破棄して新しい申請を始めますか？`,
+      )
+      if (!shouldDiscard) return
+      clearDraft()
+    }
+
     setSelectedKey(key)
+    setFormValues(canResume ? { ...draft.values } : {})
+    setView('form')
+    setSubmitError('')
+    setSubmissionId(null)
+    scrollToTop()
+  }
+
+  const resumeDraft = () => {
+    if (!draft || !REQUEST_TYPES[draft.requestKey]) return
+
+    setSelectedKey(draft.requestKey)
+    setFormValues({ ...draft.values })
+    setSubmitError('')
+    setSubmissionId(null)
     setView('form')
     scrollToTop()
   }
 
-  const submitRequest = (event) => {
+  const discardDraft = () => {
+    if (window.confirm('保存されている下書きを破棄しますか？')) {
+      clearDraft()
+    }
+  }
+
+  const handleFieldChange = (fieldName, value) => {
+    const nextValues = { ...formValues, [fieldName]: value }
+    const hasValues = Object.values(nextValues).some(
+      (fieldValue) => String(fieldValue).trim() !== '',
+    )
+    const nextDraft = hasValues
+      ? { requestKey: selectedKey, values: nextValues, updatedAt: new Date().toISOString() }
+      : null
+
+    setFormValues(nextValues)
+    setDraft(nextDraft)
+    storeDraft(userName, nextDraft)
+    setSubmitError('')
+  }
+
+  const reviewRequest = (event) => {
     event.preventDefault()
-    setView('complete')
+    setSubmitError('')
+    setView('confirm')
     scrollToTop()
+  }
+
+  const returnToForm = () => {
+    if (isSubmitting) return
+
+    setSubmitError('')
+    setView('form')
+    scrollToTop()
+  }
+
+  const submitRequest = async () => {
+    setIsSubmitting(true)
+    setSubmitError('')
+
+    try {
+      const csrfToken = await getCsrfToken()
+      const response = await fetch('/api/applications/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        body: JSON.stringify({
+          requestType: selectedKey,
+          ...formValues,
+        }),
+      })
+      const responseData = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(getSubmissionError(responseData))
+      }
+
+      setSubmissionId(responseData.id)
+      clearDraft()
+      setView('complete')
+      scrollToTop()
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : '申請を保存できませんでした。'
+      setSubmitError(message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const login = (event) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    setUserName(String(formData.get('loginName')).trim())
+    const nextUserName = String(formData.get('loginName')).trim()
+    setUserName(nextUserName)
+    setDraft(loadDraft(nextUserName))
     setIsAuthenticated(true)
     scrollToTop()
   }
@@ -665,12 +906,36 @@ function App() {
     <div className="app-shell">
       <a className="skip-link" href="#main-content">本文へスキップ</a>
       <AppHeader onHome={goHome} userName={userName} />
-      {view === 'home' && <Home onSelect={startRequest} userName={userName} />}
+      {view === 'home' && (
+        <Home
+          onSelect={startRequest}
+          userName={userName}
+          draft={draft}
+          onResumeDraft={resumeDraft}
+          onDiscardDraft={discardDraft}
+        />
+      )}
       {view === 'form' && selectedRequest && (
-        <RequestForm request={selectedRequest} onBack={goHome} onSubmit={submitRequest} />
+        <RequestForm
+          request={selectedRequest}
+          onBack={goHome}
+          onSubmit={reviewRequest}
+          formValues={formValues}
+          onFieldChange={handleFieldChange}
+        />
+      )}
+      {view === 'confirm' && selectedRequest && (
+        <Confirmation
+          request={selectedRequest}
+          formValues={formValues}
+          onBack={returnToForm}
+          onSubmit={submitRequest}
+          isSubmitting={isSubmitting}
+          submitError={submitError}
+        />
       )}
       {view === 'complete' && selectedRequest && (
-        <Complete request={selectedRequest} onHome={goHome} />
+        <Complete request={selectedRequest} onHome={goHome} submissionId={submissionId} />
       )}
       <footer className="app-footer">
         <span>Asset Desk</span>
