@@ -65,6 +65,28 @@ npm.cmd run dev
 
 新しい申請の状態は「申請中」です。管理画面の申請一覧にある「申請状態」で「申請中」「承認」「却下」を選択し、一覧下部の「保存」を押すと状態を更新できます。申請の詳細画面から変更して保存することもできます。
 
+## Excel管理台帳との同期
+
+申請がSQLiteへ保存されると、申請種別に対応するExcel管理台帳が `backend/ledgers/` に自動生成されます。Excelには申請画面で入力した項目だけが出力され、ID、申請状態、作成日時、更新日時は含まれません。
+
+- `PC貸出管理台帳.xlsx`
+- `外部記憶装置貸出管理台帳.xlsx`
+- `LAN機器貸出管理台帳.xlsx`
+- `スマートフォン購入管理台帳.xlsx`
+
+Excelが開かれているなどの理由で同期できなかった場合も、申請自体はSQLiteへ保存されます。Excelを閉じてから次のコマンドを実行すると、SQLiteの内容から4種類の台帳を再生成できます。
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe manage.py sync_ledgers
+```
+
+1種類だけ再生成する場合は `--type` を指定します。
+
+```powershell
+.\.venv\Scripts\python.exe manage.py sync_ledgers --type pc
+```
+
 ## テスト
 
 ```powershell

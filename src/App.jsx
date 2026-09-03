@@ -699,7 +699,7 @@ function Confirmation({ request, formValues, onBack, onSubmit, isSubmitting, sub
   )
 }
 
-function Complete({ request, onHome, submissionId }) {
+function Complete({ request, onHome, submissionId, ledgerWarning }) {
   const Icon = request.icon
 
   return (
@@ -712,6 +712,13 @@ function Complete({ request, onHome, submissionId }) {
         <span className="section-kicker">REQUEST RECEIVED</span>
         <h1>申請内容を受け付けました</h1>
         <p>入力データを保存しました。担当部署で内容を確認後、ご連絡します。</p>
+
+        {ledgerWarning && (
+          <div className="submit-error complete-warning" role="alert">
+            <Info size={18} aria-hidden="true" />
+            <span>{ledgerWarning} 管理者に再同期を依頼してください。</span>
+          </div>
+        )}
 
         <div className="complete-summary">
           <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">
@@ -743,6 +750,7 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [submissionId, setSubmissionId] = useState(null)
+  const [ledgerWarning, setLedgerWarning] = useState('')
   const selectedRequest = selectedKey ? REQUEST_TYPES[selectedKey] : null
 
   useEffect(() => {
@@ -771,6 +779,7 @@ function App() {
     setFormValues({})
     setSubmitError('')
     setSubmissionId(null)
+    setLedgerWarning('')
     scrollToTop()
   }
 
@@ -791,6 +800,7 @@ function App() {
     setView('form')
     setSubmitError('')
     setSubmissionId(null)
+    setLedgerWarning('')
     scrollToTop()
   }
 
@@ -866,6 +876,7 @@ function App() {
       }
 
       setSubmissionId(responseData.id)
+      setLedgerWarning(responseData.ledgerWarning || '')
       clearDraft()
       setView('complete')
       scrollToTop()
@@ -935,7 +946,12 @@ function App() {
         />
       )}
       {view === 'complete' && selectedRequest && (
-        <Complete request={selectedRequest} onHome={goHome} submissionId={submissionId} />
+        <Complete
+          request={selectedRequest}
+          onHome={goHome}
+          submissionId={submissionId}
+          ledgerWarning={ledgerWarning}
+        />
       )}
       <footer className="app-footer">
         <span>Asset Desk</span>

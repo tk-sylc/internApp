@@ -1,4 +1,5 @@
 import json
+import logging
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -6,12 +7,16 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
+from .ledger_sync import sync_ledger
 from .models import (
     ExternalStorageLoanApplication,
     LanEquipmentLoanApplication,
     PcLoanApplication,
     SmartphonePurchaseApplication,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 APPLICATION_SETTINGS = {
@@ -104,12 +109,23 @@ def create_application(request):
             status=400,
         )
 
+    ledger_synced = True
+    ledger_warning = None
+    try:
+        sync_ledger(request_type)
+    except (OSError, ValueError):
+        ledger_synced = False
+        ledger_warning = '申請は保存しましたが、Excel管理台帳を更新できませんでした。'
+        logger.exception('Excel管理台帳の同期に失敗しました。')
+
     return JsonResponse(
         {
             'id': application.pk,
             'requestType': request_type,
             'status': application.status,
-            'message': '申請を保存しました。',
+            'ledgerSynced': ledger_synced,
+            'ledgerWarning': ledger_warning,
+            'message': ledger_warning or '申請を保存し、Excel管理台帳を更新しました。',
         },
         status=201,
     )

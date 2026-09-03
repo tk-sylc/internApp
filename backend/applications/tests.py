@@ -1,9 +1,14 @@
 import json
 from datetime import date
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from django.core.exceptions import ValidationError
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from openpyxl import load_workbook
+
+from .ledger_sync import sync_all_ledgers
 
 from .models import (
     ApplicationStatus,
@@ -94,6 +99,15 @@ class ApplicationModelTests(TestCase):
 
 class CreateApplicationViewTests(TestCase):
     def setUp(self):
+        self.temporary_directory = TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.ledger_directory = Path(self.temporary_directory.name)
+        self.ledger_settings = override_settings(
+            LEDGER_OUTPUT_DIR=self.ledger_directory,
+        )
+        self.ledger_settings.enable()
+        self.addCleanup(self.ledger_settings.disable)
+
         self.client = Client(enforce_csrf_checks=True)
         self.csrf_url = reverse('applications:csrf-token')
         self.create_url = reverse('applications:create-application')
@@ -127,6 +141,23 @@ class CreateApplicationViewTests(TestCase):
         self.assertEqual(application.management_number, 'PC-01234')
         self.assertEqual(response.json()['id'], application.pk)
         self.assertEqual(response.json()['status'], ApplicationStatus.PENDING)
+        self.assertTrue(response.json()['ledgerSynced'])
+
+        workbook = load_workbook(self.ledger_directory / 'PC貸出管理台帳.xlsx')
+        worksheet = workbook['PC貸出']
+        headers = tuple(cell.value for cell in worksheet[1])
+        self.assertEqual(
+            headers,
+            (
+                '申請者氏名',
+                '所属部署',
+                '社員番号',
+                '貸出者氏名',
+                '管理番号',
+                '利用開始日',
+                '利用場所',
+            ),
+        )
 
     def test_create_each_non_pc_application_type(self):
         cases = [
@@ -187,6 +218,19 @@ class CreateApplicationViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(PcLoanApplication.objects.count(), 0)
 
+    def test_application_remains_saved_when_ledger_sync_fails(self):
+        blocked_output_path = self.ledger_directory / 'not-a-directory'
+        blocked_output_path.write_text('block directory creation', encoding='utf-8')
+
+        with self.assertLogs('applications.views', level='ERROR'):
+            with override_settings(LEDGER_OUTPUT_DIR=blocked_output_path):
+                response = self.post_with_csrf(self.payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(PcLoanApplication.objects.count(), 1)
+        self.assertFalse(response.json()['ledgerSynced'])
+        self.assertIsNotNone(response.json()['ledgerWarning'])
+
     def test_reject_post_without_csrf_token(self):
         response = self.client.post(
             self.create_url,
@@ -196,3 +240,80 @@ class CreateApplicationViewTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(PcLoanApplication.objects.count(), 0)
+
+
+class LedgerSyncTests(TestCase):
+    def setUp(self):
+        self.temporary_directory = TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.ledger_directory = Path(self.temporary_directory.name)
+        self.ledger_settings = override_settings(
+            LEDGER_OUTPUT_DIR=self.ledger_directory,
+        )
+        self.ledger_settings.enable()
+        self.addCleanup(self.ledger_settings.disable)
+
+        PcLoanApplication.objects.create(
+            **COMMON_FIELDS,
+            applicant_name='佐藤 花子',
+            management_number='PC-00001',
+            start_date=date(2026, 9, 10),
+            location='東京本社',
+        )
+        ExternalStorageLoanApplication.objects.create(
+            **COMMON_FIELDS,
+            applicant_name='佐藤 花子',
+            device_name='USBメモリ',
+            capacity='64GB',
+            location='第2会議室',
+            loan_date=date(2026, 9, 10),
+        )
+        LanEquipmentLoanApplication.objects.create(
+            **COMMON_FIELDS,
+            device_type=LanEquipmentLoanApplication.DeviceType.LAN_CABLE,
+            device_name='CAT6 LANケーブル',
+            start_date=date(2026, 9, 10),
+            return_date=date(2026, 9, 12),
+            location='第2会議室',
+        )
+        SmartphonePurchaseApplication.objects.create(
+            **COMMON_FIELDS,
+            model_name='iPhone 16',
+            purchase_date=date(2026, 9, 10),
+            storage=SmartphonePurchaseApplication.Storage.GB_128,
+            sim_required=SmartphonePurchaseApplication.SimRequired.YES,
+        )
+
+    def test_sync_all_ledgers_outputs_only_form_fields(self):
+        sync_all_ledgers()
+
+        expected_headers = {
+            'PC貸出管理台帳.xlsx': (
+                '申請者氏名', '所属部署', '社員番号', '貸出者氏名',
+                '管理番号', '利用開始日', '利用場所',
+            ),
+            '外部記憶装置貸出管理台帳.xlsx': (
+                '申請者氏名', '所属部署', '社員番号', '貸出者氏名',
+                '機器名', '容量', '場所', '貸し出し日',
+            ),
+            'LAN機器貸出管理台帳.xlsx': (
+                '申請者氏名', '所属部署', '社員番号', '機器種別',
+                '機器名', '利用開始日', '返却予定日', '利用場所',
+            ),
+            'スマートフォン購入管理台帳.xlsx': (
+                '申請者氏名', '所属部署', '社員番号', '機種',
+                '購入日', '容量', 'SIMの有無',
+            ),
+        }
+
+        for file_name, expected in expected_headers.items():
+            with self.subTest(file_name=file_name):
+                workbook = load_workbook(self.ledger_directory / file_name)
+                worksheet = workbook.active
+                headers = tuple(cell.value for cell in worksheet[1])
+                self.assertEqual(headers, expected)
+                self.assertEqual(worksheet.max_row, 2)
+                self.assertNotIn('ID', headers)
+                self.assertNotIn('申請状態', headers)
+                self.assertNotIn('作成日時', headers)
+                self.assertNotIn('更新日時', headers)
