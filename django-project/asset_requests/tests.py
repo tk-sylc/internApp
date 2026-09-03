@@ -1,10 +1,11 @@
 from datetime import date, timedelta
 
 from django.contrib.admin.sites import AdminSite
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from .admin import PCRequestAdmin
 from .models import (
@@ -27,9 +28,24 @@ def expected_reference_number(asset_request):
     )
 
 
+class AuthenticatedAssetRequestAPITestCase(APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.user = get_user_model().objects.create_user(
+            username="asset-request-user",
+            password="Test-password-123!",
+        )
+        self.client.force_login(self.user)
+
+
 class ReferenceNumberAdminTests(APITestCase):
     def test_request_can_be_found_by_its_complete_reference_number(self):
+        user = get_user_model().objects.create_user(
+            username="admin-search-user",
+            password="Test-password-123!",
+        )
         pc_request = PCRequest.objects.create(
+            created_by=user,
             requester_name="管理画面テスト",
             department="情報システム部",
             employee_number="ADMIN-001",
@@ -51,7 +67,7 @@ class ReferenceNumberAdminTests(APITestCase):
         self.assertFalse(use_distinct)
 
 
-class PCRequestCreateAPITests(APITestCase):
+class PCRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
     url_name = "asset_requests:pc-request-create"
 
     def get_payload(self):
@@ -77,6 +93,7 @@ class PCRequestCreateAPITests(APITestCase):
         self.assertEqual(PCRequest.objects.count(), 1)
 
         pc_request = PCRequest.objects.get()
+        self.assertEqual(pc_request.created_by, self.user)
         self.assertEqual(pc_request.purpose, "API自動テスト")
         self.assertEqual(pc_request.status, "pending")
         self.assertEqual(
@@ -106,6 +123,19 @@ class PCRequestCreateAPITests(APITestCase):
         self.assertEqual(response.data["status"], "pending")
         self.assertNotEqual(response.data["reference_number"], "FORGED-REFERENCE")
 
+    def test_pc_request_creator_cannot_be_spoofed_by_client(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-user",
+            password="Test-password-123!",
+        )
+        payload = self.get_payload()
+        payload["created_by"] = other_user.pk
+
+        response = self.client.post(reverse(self.url_name), payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(PCRequest.objects.get().created_by, self.user)
+
     def test_pc_request_rejects_past_start_date(self):
         payload = self.get_payload()
         payload["start_date"] = relative_date(-1)
@@ -117,7 +147,7 @@ class PCRequestCreateAPITests(APITestCase):
         self.assertFalse(PCRequest.objects.exists())
 
 
-class ExternalStorageRequestCreateAPITests(APITestCase):
+class ExternalStorageRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
     url_name = "asset_requests:external-storage-request-create"
 
     def get_payload(self):
@@ -144,6 +174,7 @@ class ExternalStorageRequestCreateAPITests(APITestCase):
         self.assertEqual(ExternalStorageRequest.objects.count(), 1)
 
         request = ExternalStorageRequest.objects.get()
+        self.assertEqual(request.created_by, self.user)
         self.assertEqual(request.device_name, "暗号化USBメモリ")
         self.assertEqual(request.purpose, "データ受け渡し")
         self.assertEqual(request.status, "pending")
@@ -173,7 +204,7 @@ class ExternalStorageRequestCreateAPITests(APITestCase):
         self.assertFalse(ExternalStorageRequest.objects.exists())
 
 
-class LANRequestCreateAPITests(APITestCase):
+class LANRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
     url_name = "asset_requests:lan-request-create"
 
     def get_payload(self):
@@ -203,6 +234,7 @@ class LANRequestCreateAPITests(APITestCase):
         self.assertEqual(LANRequest.objects.count(), 1)
 
         request = LANRequest.objects.get()
+        self.assertEqual(request.created_by, self.user)
         self.assertEqual(request.quantity, 2)
         self.assertEqual(
             request.return_date,
@@ -255,7 +287,7 @@ class LANRequestCreateAPITests(APITestCase):
         self.assertFalse(LANRequest.objects.exists())
 
 
-class SmartphoneRequestCreateAPITests(APITestCase):
+class SmartphoneRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
     url_name = "asset_requests:smartphone-request-create"
 
     def get_payload(self):
@@ -286,6 +318,7 @@ class SmartphoneRequestCreateAPITests(APITestCase):
         self.assertEqual(SmartphoneRequest.objects.count(), 1)
 
         request = SmartphoneRequest.objects.get()
+        self.assertEqual(request.created_by, self.user)
         self.assertEqual(request.model_name, "iPhoneテストモデル")
         self.assertEqual(
             request.purchase_date,
@@ -356,7 +389,7 @@ class SmartphoneRequestCreateAPITests(APITestCase):
         self.assertFalse(SmartphoneRequest.objects.exists())
 
 
-class CreateEndpointMethodTests(APITestCase):
+class CreateEndpointMethodTests(AuthenticatedAssetRequestAPITestCase):
     def test_create_endpoints_do_not_expose_request_lists(self):
         url_names = [
             "asset_requests:pc-request-create",
@@ -373,3 +406,77 @@ class CreateEndpointMethodTests(APITestCase):
                     response.status_code,
                     status.HTTP_405_METHOD_NOT_ALLOWED,
                 )
+
+
+class AssetRequestAuthenticationTests(APITestCase):
+    def test_anonymous_users_cannot_create_asset_requests(self):
+        url_names = [
+            "asset_requests:pc-request-create",
+            "asset_requests:external-storage-request-create",
+            "asset_requests:lan-request-create",
+            "asset_requests:smartphone-request-create",
+        ]
+
+        for url_name in url_names:
+            with self.subTest(url_name=url_name):
+                response = self.client.post(reverse(url_name), {}, format="json")
+
+                self.assertEqual(
+                    response.status_code,
+                    status.HTTP_403_FORBIDDEN,
+                )
+
+        self.assertFalse(PCRequest.objects.exists())
+        self.assertFalse(ExternalStorageRequest.objects.exists())
+        self.assertFalse(LANRequest.objects.exists())
+        self.assertFalse(SmartphoneRequest.objects.exists())
+
+
+class AssetRequestCSRFProtectionTests(APITestCase):
+    url_name = "asset_requests:pc-request-create"
+    password = "Test-password-123!"
+
+    def setUp(self):
+        super().setUp()
+        self.user = get_user_model().objects.create_user(
+            username="asset-csrf-user",
+            password=self.password,
+        )
+        self.csrf_client = APIClient(enforce_csrf_checks=True)
+        self.csrf_client.force_login(self.user)
+
+    def get_payload(self):
+        return {
+            "requester_name": "CSRFテスト太郎",
+            "department": "開発部",
+            "employee_number": "CSRF-001",
+            "applicant_name": "CSRFテスト太郎",
+            "management_number": "PC-CSRF-001",
+            "start_date": relative_date(1),
+            "location": "テスト環境",
+            "purpose": "CSRF自動テスト",
+        }
+
+    def test_authenticated_request_without_csrf_token_is_rejected(self):
+        response = self.csrf_client.post(
+            reverse(self.url_name),
+            self.get_payload(),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(PCRequest.objects.exists())
+
+    def test_authenticated_request_with_valid_csrf_token_is_accepted(self):
+        self.csrf_client.get(reverse("accounts:session"))
+        csrf_token = self.csrf_client.cookies["csrftoken"].value
+
+        response = self.csrf_client.post(
+            reverse(self.url_name),
+            self.get_payload(),
+            format="json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(PCRequest.objects.get().created_by, self.user)

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -17,6 +18,14 @@ class BaseAssetRequest(models.Model):
     requester_name = models.CharField("申請者氏名", max_length=100)
     department = models.CharField("所属部署", max_length=100)
     employee_number = models.CharField("社員番号", max_length=50, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="作成ユーザー",
+        on_delete=models.PROTECT,
+        related_name="%(app_label)s_%(class)s_created",
+        null=True,
+        blank=True,
+    )
     status = models.CharField(
         "申請状態",
         max_length=20,

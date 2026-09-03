@@ -200,6 +200,33 @@
   flex: 0 0 auto;
 }
 
+.session-loading-card {
+  min-height: 250px;
+}
+
+.session-loading {
+  min-height: 145px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--teal-700);
+  text-align: left;
+}
+
+.session-loading h1 {
+  margin: 0 0 5px;
+  color: var(--ink-900);
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.session-loading p {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 12.5px;
+}
+
 .app-header {
   position: sticky;
   top: 0;
@@ -272,6 +299,17 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.header-account {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-logout-button {
+  min-height: 36px;
+  padding: 0 12px;
 }
 
 .user-avatar {
@@ -972,6 +1010,21 @@
   border-radius: 11px;
 }
 
+.form-alert.login-alert {
+  margin: 0;
+}
+
+.login-alert p,
+.account-alert p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.form-alert.account-alert {
+  margin: 16px auto 0;
+}
+
 .form-alert--top {
   margin-top: 24px;
   margin-bottom: 0;
@@ -1541,6 +1594,19 @@
 
   .brand-copy span,
   .user-copy {
+    display: none;
+  }
+
+  .header-account {
+    gap: 8px;
+  }
+
+  .header-logout-button {
+    width: 36px;
+    padding: 0;
+  }
+
+  .header-logout-button span {
     display: none;
   }
 

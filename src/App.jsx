@@ -13,6 +13,7 @@ import {
   Laptop,
   LoaderCircle,
   LogIn,
+  LogOut,
   Network,
   PackageCheck,
   ShieldCheck,
@@ -367,6 +368,48 @@ const FIELD_MAX_LENGTHS = {
 const DRAFT_STORAGE_KEY_PREFIX = 'asset-desk-request-draft-v2'
 const REQUEST_TIMEOUT_MS = 15_000
 
+function readCookie(name) {
+  const cookiePrefix = `${name}=`
+  const cookie = document.cookie
+    .split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(cookiePrefix))
+
+  return cookie ? decodeURIComponent(cookie.slice(cookiePrefix.length)) : ''
+}
+
+async function getCsrfToken(signal) {
+  let csrfToken = readCookie('csrftoken')
+
+  if (!csrfToken) {
+    const response = await fetch('/api/auth/session/', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`CSRF token request failed: HTTP ${response.status}`)
+    }
+
+    csrfToken = readCookie('csrftoken')
+  }
+
+  if (!csrfToken) {
+    throw new Error('CSRF token was not issued')
+  }
+
+  return csrfToken
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
 function getRequestFields(request) {
   return [...APPLICANT_FIELDS, ...request.fields]
 }
@@ -705,7 +748,33 @@ function FormField({
   )
 }
 
-function Login({ onLogin }) {
+function SessionLoading() {
+  return (
+    <main id="main-content" className="login-page">
+      <section className="login-card session-loading-card" aria-labelledby="session-loading-title" aria-busy="true">
+        <div className="login-brand">
+          <span className="brand-mark" aria-hidden="true">
+            <PackageCheck size={25} strokeWidth={2.2} />
+          </span>
+          <div className="brand-copy">
+            <strong>Asset Desk</strong>
+            <span>社内資産申請ポータル</span>
+          </div>
+        </div>
+
+        <div className="session-loading" role="status" aria-live="polite">
+          <LoaderCircle className="button-spinner" size={28} aria-hidden="true" />
+          <div>
+            <h1 id="session-loading-title">ログイン状態を確認しています</h1>
+            <p>しばらくお待ちください。</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function Login({ onLogin, error, isSubmitting }) {
   return (
     <main id="main-content" className="login-page">
       <section className="login-card" aria-labelledby="login-title">
@@ -725,7 +794,17 @@ function Login({ onLogin }) {
           <p>ログイン名とパスワードを入力してください。</p>
         </div>
 
-        <form className="login-form" onSubmit={onLogin}>
+        <form className="login-form" onSubmit={onLogin} aria-busy={isSubmitting}>
+          {error && (
+            <div id="login-error" className="form-alert login-alert" role="alert">
+              <CircleAlert size={20} aria-hidden="true" />
+              <div>
+                <strong>ログインできませんでした</strong>
+                <p>{error}</p>
+              </div>
+            </div>
+          )}
+
           <div className="login-field">
             <label htmlFor="login-name">ログイン名</label>
             <div className="login-input">
@@ -738,6 +817,8 @@ function Login({ onLogin }) {
                 placeholder="ログイン名を入力"
                 required
                 autoFocus
+                disabled={isSubmitting}
+                aria-describedby={error ? 'login-error' : undefined}
               />
             </div>
           </div>
@@ -753,26 +834,37 @@ function Login({ onLogin }) {
                 autoComplete="current-password"
                 placeholder="パスワードを入力"
                 required
+                disabled={isSubmitting}
+                aria-describedby={error ? 'login-error' : undefined}
               />
             </div>
           </div>
 
-          <button className="primary-button login-button" type="submit">
-            ログイン
-            <LogIn size={18} aria-hidden="true" />
+          <button className="primary-button login-button" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                確認しています
+                <LoaderCircle className="button-spinner" size={18} aria-hidden="true" />
+              </>
+            ) : (
+              <>
+                ログイン
+                <LogIn size={18} aria-hidden="true" />
+              </>
+            )}
           </button>
         </form>
 
         <div className="login-note">
           <Info size={18} aria-hidden="true" />
-          <p>現在は画面確認用の仮ログインです。パスワード認証はまだ接続されていません。</p>
+          <p>Djangoに登録されているログイン名とパスワードを使用してください。</p>
         </div>
       </section>
     </main>
   )
 }
 
-function AppHeader({ onHome, userName, navigationDisabled }) {
+function AppHeader({ onHome, onLogout, userName, navigationDisabled, isLoggingOut }) {
   return (
     <header className="app-header">
       <div className="header-inner">
@@ -792,12 +884,28 @@ function AppHeader({ onHome, userName, navigationDisabled }) {
           </span>
         </button>
 
-        <div className="user-profile" aria-label="ログインユーザー">
-          <span className="user-avatar" aria-hidden="true">{userName.charAt(0).toUpperCase()}</span>
-          <span className="user-copy">
-            <strong>{userName}</strong>
-            <span>デモ利用中</span>
-          </span>
+        <div className="header-account">
+          <div className="user-profile" aria-label={`ログインユーザー: ${userName}`}>
+            <span className="user-avatar" aria-hidden="true">{userName.charAt(0).toUpperCase()}</span>
+            <span className="user-copy">
+              <strong>{userName}</strong>
+              <span>ログイン中</span>
+            </span>
+          </div>
+          <button
+            className="secondary-button header-logout-button"
+            type="button"
+            onClick={onLogout}
+            disabled={navigationDisabled || isLoggingOut}
+            aria-label={isLoggingOut ? 'ログアウトしています' : 'ログアウト'}
+          >
+            {isLoggingOut ? (
+              <LoaderCircle className="button-spinner" size={17} aria-hidden="true" />
+            ) : (
+              <LogOut size={17} aria-hidden="true" />
+            )}
+            <span>{isLoggingOut ? '処理中' : 'ログアウト'}</span>
+          </button>
         </div>
       </div>
     </header>
@@ -1326,6 +1434,11 @@ function Complete({ request, onHome, submissionResult, submittedValues }) {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isCheckingSession, setIsCheckingSession] = useState(true)
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [loginError, setLoginError] = useState('')
+  const [accountError, setAccountError] = useState('')
   const [userName, setUserName] = useState('')
   const [view, setView] = useState('home')
   const [selectedKey, setSelectedKey] = useState(null)
@@ -1341,7 +1454,61 @@ function App() {
   const selectedRequest = selectedKey ? REQUEST_TYPES[selectedKey] : null
 
   useEffect(() => {
-    const pageTitle = !isAuthenticated
+    const abortController = new AbortController()
+
+    const restoreSession = async () => {
+      try {
+        const response = await fetch('/api/auth/session/', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: abortController.signal,
+        })
+        const result = await readJsonResponse(response)
+
+        if (!response.ok || !result || typeof result.authenticated !== 'boolean') {
+          throw new Error(`Session request failed: HTTP ${response.status}`)
+        }
+
+        if (result.authenticated) {
+          if (typeof result.user?.username !== 'string' || !result.user.username.trim()) {
+            throw new Error('Authenticated user was not returned')
+          }
+
+          const nextUserName = result.user.username.trim()
+          setUserName(nextUserName)
+          setDraft(readRequestDraft(nextUserName))
+          setIsAuthenticated(true)
+        } else {
+          setUserName('')
+          setDraft(null)
+          setIsAuthenticated(false)
+        }
+
+        setLoginError('')
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.error('ログイン状態を確認できませんでした', error)
+          setIsAuthenticated(false)
+          setLoginError('サーバーに接続できませんでした。Djangoが起動しているか確認してください。')
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsCheckingSession(false)
+        }
+      }
+    }
+
+    restoreSession()
+
+    return () => {
+      abortController.abort()
+    }
+  }, [])
+
+  useEffect(() => {
+    const pageTitle = isCheckingSession
+      ? '確認中 | Asset Desk'
+      : !isAuthenticated
       ? 'ログイン | Asset Desk'
       : view === 'form' && selectedRequest
       ? `${selectedRequest.formTitle} | Asset Desk`
@@ -1351,11 +1518,32 @@ function App() {
         ? '受付完了 | Asset Desk'
         : 'Asset Desk | 社内資産申請'
     document.title = pageTitle
-  }, [isAuthenticated, selectedRequest, view])
+  }, [isAuthenticated, isCheckingSession, selectedRequest, view])
 
   const scrollToTop = () => {
     const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' })
+  }
+
+  const resetRequestFlow = () => {
+    setView('home')
+    setSelectedKey(null)
+    setFormValues({})
+    setFieldErrors({})
+    setErrorFocusRequest(null)
+    setSubmitErrors([])
+    setSubmissionResult(null)
+    setSubmittedValues(null)
+  }
+
+  const returnToLogin = (message = '') => {
+    setIsAuthenticated(false)
+    setUserName('')
+    setDraft(null)
+    setAccountError('')
+    setLoginError(message)
+    resetRequestFlow()
+    scrollToTop()
   }
 
   const clearDraft = () => {
@@ -1376,14 +1564,7 @@ function App() {
       return
     }
 
-    setView('home')
-    setSelectedKey(null)
-    setFormValues({})
-    setFieldErrors({})
-    setErrorFocusRequest(null)
-    setSubmitErrors([])
-    setSubmissionResult(null)
-    setSubmittedValues(null)
+    resetRequestFlow()
     scrollToTop()
   }
 
@@ -1515,7 +1696,6 @@ function App() {
   }
 
   const submitRequest = async () => {
-
     if (submittingRef.current || !selectedKey || !selectedRequest) {
       return
     }
@@ -1545,20 +1725,39 @@ function App() {
     setSubmitErrors([])
 
     try {
+      const csrfToken = await getCsrfToken(abortController.signal)
       const response = await fetch(apiConfig.endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
         },
+        credentials: 'same-origin',
         body: JSON.stringify(payload),
         signal: abortController.signal,
       })
 
-      let result = null
-      try {
-        result = await response.json()
-      } catch {
-        // JSONではないエラーレスポンスも、下の共通メッセージで案内する。
+      const result = await readJsonResponse(response)
+
+      if (!response.ok && (response.status === 401 || response.status === 403)) {
+        try {
+          const sessionResponse = await fetch('/api/auth/session/', {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            signal: abortController.signal,
+          })
+          const sessionResult = await readJsonResponse(sessionResponse)
+
+          if (sessionResponse.ok && sessionResult?.authenticated === false) {
+            returnToLogin('ログインの有効期限が切れました。もう一度ログインしてください。')
+            return
+          }
+        } catch (error) {
+          if (error?.name === 'AbortError') {
+            throw error
+          }
+          console.error('申請エラー後のログイン状態を確認できませんでした', error)
+        }
       }
 
       if (!response.ok) {
@@ -1605,21 +1804,135 @@ function App() {
     }
   }
 
-  const login = (event) => {
+  const login = async (event) => {
     event.preventDefault()
+    if (isLoggingIn) {
+      return
+    }
+
     const formData = new FormData(event.currentTarget)
     const nextUserName = String(formData.get('loginName')).trim()
-    setUserName(nextUserName)
-    setDraft(readRequestDraft(nextUserName))
-    setIsAuthenticated(true)
-    scrollToTop()
+    const password = String(formData.get('password'))
+    const abortController = new AbortController()
+    const timeoutId = window.setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS)
+
+    setIsLoggingIn(true)
+    setLoginError('')
+
+    try {
+      const csrfToken = await getCsrfToken(abortController.signal)
+      const response = await fetch('/api/auth/login/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          username: nextUserName,
+          password,
+        }),
+        signal: abortController.signal,
+      })
+      const result = await readJsonResponse(response)
+
+      if (!response.ok) {
+        const message = typeof result?.detail === 'string'
+          ? result.detail
+          : response.status === 403
+            ? '安全確認に失敗しました。ページを再読み込みして、もう一度お試しください。'
+            : `ログインできませんでした（HTTP ${response.status}）。`
+        setLoginError(message)
+        return
+      }
+
+      if (result?.authenticated !== true || typeof result.user?.username !== 'string') {
+        throw new Error('Login response was invalid')
+      }
+
+      const authenticatedUserName = result.user.username.trim()
+      if (!authenticatedUserName) {
+        throw new Error('Login response did not include a username')
+      }
+
+      resetRequestFlow()
+      setUserName(authenticatedUserName)
+      setDraft(readRequestDraft(authenticatedUserName))
+      setIsAuthenticated(true)
+      setAccountError('')
+      scrollToTop()
+    } catch (error) {
+      console.error('ログインAPIとの通信に失敗しました', error)
+      setLoginError(
+        error?.name === 'AbortError'
+          ? 'ログイン処理がタイムアウトしました。もう一度お試しください。'
+          : 'サーバーに接続できませんでした。Djangoが起動しているか確認してください。',
+      )
+    } finally {
+      window.clearTimeout(timeoutId)
+      setIsLoggingIn(false)
+    }
+  }
+
+  const logout = async () => {
+    if (isLoggingOut || submittingRef.current) {
+      return
+    }
+
+    const abortController = new AbortController()
+    const timeoutId = window.setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS)
+
+    setIsLoggingOut(true)
+    setAccountError('')
+
+    try {
+      const csrfToken = await getCsrfToken(abortController.signal)
+      const response = await fetch('/api/auth/logout/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+        },
+        credentials: 'same-origin',
+        signal: abortController.signal,
+      })
+      const result = await readJsonResponse(response)
+
+      if (!response.ok || result?.authenticated !== false) {
+        throw new Error(`Logout request failed: HTTP ${response.status}`)
+      }
+
+      returnToLogin()
+    } catch (error) {
+      console.error('ログアウトAPIとの通信に失敗しました', error)
+      setAccountError(
+        error?.name === 'AbortError'
+          ? 'ログアウト処理がタイムアウトしました。もう一度お試しください。'
+          : 'ログアウトできませんでした。通信状態を確認して、もう一度お試しください。',
+      )
+    } finally {
+      window.clearTimeout(timeoutId)
+      setIsLoggingOut(false)
+    }
+  }
+
+  if (isCheckingSession) {
+    return (
+      <div className="app-shell login-shell">
+        <a className="skip-link" href="#main-content">本文へスキップ</a>
+        <SessionLoading />
+        <footer className="app-footer login-footer">
+          <span>Asset Desk</span>
+          <span>社内資産申請ポータル</span>
+        </footer>
+      </div>
+    )
   }
 
   if (!isAuthenticated) {
     return (
       <div className="app-shell login-shell">
         <a className="skip-link" href="#main-content">本文へスキップ</a>
-        <Login onLogin={login} />
+        <Login onLogin={login} error={loginError} isSubmitting={isLoggingIn} />
         <footer className="app-footer login-footer">
           <span>Asset Desk</span>
           <span>社内資産申請ポータル</span>
@@ -1631,7 +1944,22 @@ function App() {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">本文へスキップ</a>
-      <AppHeader onHome={goHome} userName={userName} navigationDisabled={isSubmitting} />
+      <AppHeader
+        onHome={goHome}
+        onLogout={logout}
+        userName={userName}
+        navigationDisabled={isSubmitting || isLoggingOut}
+        isLoggingOut={isLoggingOut}
+      />
+      {accountError && (
+        <div className="page-container form-alert account-alert" role="alert">
+          <CircleAlert size={20} aria-hidden="true" />
+          <div>
+            <strong>アカウント操作を完了できませんでした</strong>
+            <p>{accountError}</p>
+          </div>
+        </div>
+      )}
       {view === 'home' && (
         <Home
           onSelect={startRequest}

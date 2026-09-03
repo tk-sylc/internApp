@@ -9,6 +9,7 @@ from .models import ExternalStorageRequest, LANRequest, PCRequest, SmartphoneReq
 class BaseAssetRequestAdmin(admin.ModelAdmin):
     list_display = (
         "reference_number",
+        "created_by",
         "requester_name",
         "department",
         "employee_number",
@@ -16,8 +17,13 @@ class BaseAssetRequestAdmin(admin.ModelAdmin):
         "created_at",
     )
     list_filter = ("status", "created_at")
-    search_fields = ("requester_name", "department", "employee_number")
-    readonly_fields = ("reference_number", "created_at", "updated_at")
+    search_fields = (
+        "created_by__username",
+        "requester_name",
+        "department",
+        "employee_number",
+    )
+    readonly_fields = ("reference_number", "created_by", "created_at", "updated_at")
     ordering = ("-created_at",)
 
     @admin.display(description="受付番号", ordering="id")
@@ -25,6 +31,11 @@ class BaseAssetRequestAdmin(admin.ModelAdmin):
         if obj is None:
             return "保存後に発行されます"
         return obj.reference_number
+
+    def save_model(self, request, obj, form, change):
+        if not change and not obj.created_by_id:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
 
     def get_search_results(self, request, queryset, search_term):
         """通常の検索に加えて、完全な受付番号でも申請を検索する。"""

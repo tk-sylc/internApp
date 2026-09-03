@@ -14,21 +14,26 @@ from .serializers import (
 )
 
 
-class PCRequestCreateView(generics.CreateAPIView):
+class BaseAssetRequestCreateView(generics.CreateAPIView):
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class PCRequestCreateView(BaseAssetRequestCreateView):
     queryset = PCRequest.objects.all()
     serializer_class = PCRequestSerializer
 
 
-class ExternalStorageRequestCreateView(generics.CreateAPIView):
+class ExternalStorageRequestCreateView(BaseAssetRequestCreateView):
     queryset = ExternalStorageRequest.objects.all()
     serializer_class = ExternalStorageRequestSerializer
 
 
-class LANRequestCreateView(generics.CreateAPIView):
+class LANRequestCreateView(BaseAssetRequestCreateView):
     queryset = LANRequest.objects.all()
     serializer_class = LANRequestSerializer
 
 
-class SmartphoneRequestCreateView(generics.CreateAPIView):
+class SmartphoneRequestCreateView(BaseAssetRequestCreateView):
     queryset = SmartphoneRequest.objects.all()
     serializer_class = SmartphoneRequestSerializer
