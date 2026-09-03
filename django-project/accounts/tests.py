@@ -3,8 +3,29 @@ import json
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
+from .models import Department, UserProfile
 
+class UserProfileModelTests(TestCase):
+    def test_profile_is_connected_to_user(self):
+        user = get_user_model().objects.create_user(
+            username="profile@example.com",
+            email="profile@example.com",
+            password="Test-password-123!",
+        )
 
+        profile = UserProfile.objects.create(
+            user=user,
+            display_name="山田 太郎",
+            department=Department.SALES,
+        )
+
+        self.assertEqual(user.profile, profile)
+        self.assertEqual(profile.display_name, "山田 太郎")
+        self.assertEqual(profile.department, Department.SALES)
+        self.assertEqual(profile.get_department_display(), "営業部")
+        self.assertEqual(str(profile), "山田 太郎（営業部）")
+
+        
 class SessionViewTests(TestCase):
     def test_anonymous_user_is_not_authenticated(self):
         response = self.client.get(reverse("accounts:session"))
