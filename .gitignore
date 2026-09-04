@@ -18,6 +18,8 @@ __pycache__/
 backend/.venv/
 backend/db.sqlite3
 backend/ledgers/
+backend/approved_ledgers/
+.env
 
 # Editor directories and files
 .vscode/*

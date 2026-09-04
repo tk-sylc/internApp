@@ -122,7 +122,7 @@ def _create_workbook(queryset, columns, sheet_name):
 
 
 def sync_ledger(request_type):
-    """SQLiteの全申請から指定された種類のExcel台帳を安全に再生成する。"""
+    """MySQLの全申請から指定された種類のExcel台帳を安全に再生成する。"""
 
     config = LEDGER_CONFIG.get(request_type)
     if config is None:

@@ -10,13 +10,15 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SQLiteの申請内容から自動生成するExcel管理台帳の保存先。
+# MySQLの申請内容から自動生成するExcel管理台帳の保存先。
 LEDGER_OUTPUT_DIR = BASE_DIR / 'ledgers'
+APPROVED_LEDGER_OUTPUT_DIR = BASE_DIR / 'approved_ledgers'
 
 
 # Quick-start development settings - unsuitable for production
@@ -85,8 +87,19 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv('MYSQL_DATABASE', 'asset_desk'),
+        'USER': os.getenv('MYSQL_USER', 'asset_desk_app'),
+        'PASSWORD': os.getenv('MYSQL_PASSWORD', ''),
+        'HOST': os.getenv('MYSQL_HOST', '127.0.0.1'),
+        'PORT': os.getenv('MYSQL_PORT', '3306'),
+        'CONN_MAX_AGE': 60,
+        'CONN_HEALTH_CHECKS': True,
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            'isolation_level': 'read committed',
+        },
     }
 }
 

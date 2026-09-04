@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -11,12 +12,16 @@ from openpyxl import load_workbook
 from .ledger_sync import sync_all_ledgers
 
 from .models import (
+    ApprovedApplication,
     ApplicationStatus,
     ExternalStorageLoanApplication,
     LanEquipmentLoanApplication,
     PcLoanApplication,
     SmartphonePurchaseApplication,
 )
+
+
+User = get_user_model()
 
 
 COMMON_FIELDS = {
@@ -109,6 +114,8 @@ class CreateApplicationViewTests(TestCase):
         self.addCleanup(self.ledger_settings.disable)
 
         self.client = Client(enforce_csrf_checks=True)
+        self.user = User.objects.create_user(username='asset-manager', password='test-password')
+        self.client.force_login(self.user)
         self.csrf_url = reverse('applications:csrf-token')
         self.create_url = reverse('applications:create-application')
         self.payload = {
@@ -240,6 +247,111 @@ class CreateApplicationViewTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(PcLoanApplication.objects.count(), 0)
+
+
+class AuthenticationViewTests(TestCase):
+    def setUp(self):
+        self.client = Client(enforce_csrf_checks=True)
+        self.user = User.objects.create_user(
+            username='asset-manager',
+            email='manager@example.com',
+            password='test-password',
+            first_name='資産管理',
+            last_name='担当者',
+        )
+
+    def test_session_login_and_logout(self):
+        session_url = reverse('applications:session')
+        response = self.client.get(session_url)
+        self.assertFalse(response.json()['authenticated'])
+        token = self.client.cookies['csrftoken'].value
+
+        response = self.client.post(
+            reverse('applications:login'),
+            data=json.dumps({'username': 'manager@example.com', 'password': 'test-password'}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['authenticated'])
+        self.assertEqual(response.json()['user']['username'], 'asset-manager')
+
+        token = self.client.cookies['csrftoken'].value
+        response = self.client.post(
+            reverse('applications:logout'),
+            HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()['authenticated'])
+
+    def test_approved_applications_require_login(self):
+        response = self.client.get(reverse('applications:approved-applications'))
+        self.assertEqual(response.status_code, 401)
+
+
+class ApprovedApplicationViewTests(TestCase):
+    def setUp(self):
+        self.temporary_directory = TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.ledger_directory = Path(self.temporary_directory.name)
+        self.ledger_settings = override_settings(
+            APPROVED_LEDGER_OUTPUT_DIR=self.ledger_directory,
+        )
+        self.ledger_settings.enable()
+        self.addCleanup(self.ledger_settings.disable)
+        self.user = User.objects.create_user(username='asset-manager', password='test-password')
+        self.client = Client(enforce_csrf_checks=True)
+        self.client.force_login(self.user)
+        self.url = reverse('applications:approved-applications')
+        self.payload = {
+            'applicationType': 'pc',
+            'operationType': 'loan',
+            'applicantName': '山田 太郎',
+            'department': '営業部',
+            'approvedDate': '2026-09-03',
+            'approvedConfirmed': True,
+            'details': {
+                'device_name': 'ThinkPad X1 Carbon',
+                'management_number': 'PC-01234',
+                'user_name': '山田 太郎',
+                'operation_date': '2026-09-10',
+                'expected_return_date': '2026-09-20',
+                'quantity': 1,
+                'location': '東京本社',
+                'purpose': '営業活動',
+            },
+            'notes': '承認書確認済み',
+        }
+
+    def post_with_csrf(self, payload=None):
+        self.client.get(reverse('applications:session'))
+        token = self.client.cookies['csrftoken'].value
+        return self.client.post(
+            self.url,
+            data=json.dumps(payload or self.payload),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=token,
+        )
+
+    def test_create_list_and_sync_approved_application(self):
+        response = self.post_with_csrf()
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(ApprovedApplication.objects.count(), 1)
+        application = ApprovedApplication.objects.get()
+        self.assertEqual(application.entered_by, self.user)
+        self.assertEqual(response.json()['referenceNumber'], application.reference_number)
+        self.assertTrue(response.json()['ledgerSynced'])
+        self.assertTrue((self.ledger_directory / '承認済み_PC管理台帳.xlsx').exists())
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+
+    def test_reject_unapproved_entry(self):
+        self.payload['approvedConfirmed'] = False
+        response = self.post_with_csrf()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ApprovedApplication.objects.count(), 0)
 
 
 class LedgerSyncTests(TestCase):

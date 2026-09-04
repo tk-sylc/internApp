@@ -1405,3 +1405,160 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Asset manager additions */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logout-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #d7dfeb;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  border-color: #9aa9bd;
+  background: #f8fafc;
+}
+
+.approval-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 17px 18px;
+  border: 1px solid #b8c9e3;
+  border-radius: 12px;
+  background: #f4f8ff;
+  cursor: pointer;
+}
+
+.approval-check input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #17376d;
+}
+
+.approval-check span,
+.approval-check small {
+  display: block;
+}
+
+.approval-check strong {
+  color: #17376d;
+}
+
+.approval-check small {
+  margin-top: 3px;
+  color: #64748b;
+}
+
+.records-section {
+  margin-top: 34px;
+  padding: 28px;
+  border: 1px solid #e1e7ef;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(29, 49, 79, 0.06);
+}
+
+.records-heading {
+  align-items: flex-end;
+}
+
+.records-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(320px, 100%);
+  padding: 0 12px;
+  border: 1px solid #d7dfeb;
+  border-radius: 10px;
+  color: #64748b;
+}
+
+.records-search input {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.records-table-wrap {
+  overflow-x: auto;
+  margin-top: 20px;
+}
+
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.records-table th,
+.records-table td {
+  padding: 13px 12px;
+  border-bottom: 1px solid #e8edf3;
+  text-align: left;
+}
+
+.records-table th {
+  color: #64748b;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+}
+
+.records-empty {
+  margin: 20px 0 0;
+  padding: 28px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  text-align: center;
+}
+
+.boot-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  color: #475569;
+}
+
+@media (max-width: 640px) {
+  .header-actions {
+    gap: 8px;
+  }
+
+  .logout-button {
+    padding: 0 10px;
+  }
+
+  .logout-button:not(:focus) {
+    font-size: 0;
+  }
+
+  .records-section {
+    padding: 20px;
+  }
+
+  .records-heading {
+    align-items: stretch;
+  }
+}

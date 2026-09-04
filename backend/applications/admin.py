@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    ApprovedApplication,
     ExternalStorageLoanApplication,
     LanEquipmentLoanApplication,
     PcLoanApplication,
@@ -96,3 +97,37 @@ class SmartphonePurchaseApplicationAdmin(BaseApplicationAdmin):
     )
     search_fields = BaseApplicationAdmin.search_fields + ('model_name',)
     list_filter = ('status', 'storage', 'sim_required', 'purchase_date', 'department')
+
+
+@admin.register(ApprovedApplication)
+class ApprovedApplicationAdmin(admin.ModelAdmin):
+    list_display = (
+        'reference_number',
+        'operation_type',
+        'application_type',
+        'applicant_name',
+        'department',
+        'approved_date',
+        'entered_by',
+        'created_at',
+    )
+    list_filter = (
+        'operation_type',
+        'application_type',
+        'department',
+        'approved_date',
+        'created_at',
+    )
+    search_fields = ('applicant_name', 'department', 'entered_by__username')
+    readonly_fields = ('reference_number', 'entered_by', 'created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+
+    @admin.display(description='受付番号', ordering='id')
+    def reference_number(self, obj):
+        return obj.reference_number if obj else '保存後に発行されます'
+
+    def save_model(self, request, obj, form, change):
+        if not change and not obj.entered_by_id:
+            obj.entered_by = request.user
+        super().save_model(request, obj, form, change)

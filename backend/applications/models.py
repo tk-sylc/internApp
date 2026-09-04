@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 class ApplicationStatus(models.TextChoices):
@@ -115,3 +117,66 @@ class SmartphonePurchaseApplication(BaseApplication):
 
     def __str__(self):
         return f'{self.model_name} - {self.requester_name}'
+
+
+class ApprovedApplication(models.Model):
+    """上司承認済みの資産手続きを担当者が台帳へ登録した記録。"""
+
+    class ApplicationType(models.TextChoices):
+        PC = 'pc', 'PC'
+        EXTERNAL_STORAGE = 'memory', '外部記憶装置'
+        LAN = 'lan', 'LAN機器'
+        SMARTPHONE = 'phone', 'スマートフォン'
+        OTHER = 'other', 'その他'
+
+    class OperationType(models.TextChoices):
+        PURCHASE = 'purchase', '購入'
+        LOAN = 'loan', '貸出'
+        RETURN = 'return', '返却'
+        DISPOSAL = 'disposal', '廃棄'
+
+    application_type = models.CharField(
+        '機器種別',
+        max_length=20,
+        choices=ApplicationType.choices,
+        db_index=True,
+    )
+    operation_type = models.CharField(
+        '処理区分',
+        max_length=20,
+        choices=OperationType.choices,
+        db_index=True,
+    )
+    applicant_name = models.CharField('申請者氏名', max_length=100)
+    department = models.CharField('所属部署', max_length=100, db_index=True)
+    approved_date = models.DateField('承認日', db_index=True)
+    details = models.JSONField('転記項目', default=dict)
+    notes = models.TextField('担当者メモ', blank=True)
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name='登録担当者',
+        on_delete=models.PROTECT,
+        related_name='approved_applications_entered',
+    )
+    created_at = models.DateTimeField('登録日時', auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '承認済み資産処理'
+        verbose_name_plural = '承認済み資産処理'
+
+    @property
+    def reference_number(self):
+        if self.pk is None or self.created_at is None:
+            return ''
+        created_date = timezone.localdate(self.created_at)
+        return f'ENTRY-{created_date:%Y%m%d}-{self.pk:06d}'
+
+    def clean(self):
+        super().clean()
+        if self.approved_date and self.approved_date > timezone.localdate():
+            raise ValidationError({'approved_date': '未来の日付は指定できません。'})
+
+    def __str__(self):
+        return f'{self.reference_number} {self.applicant_name}'
