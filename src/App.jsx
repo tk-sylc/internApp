@@ -77,7 +77,7 @@ function Login({ onLogin, onForgotPassword }) {
       const response = await fetch('/api/auth/login/', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-        body: JSON.stringify({ username: email, password }),
+        body: JSON.stringify({ email, password }),
       })
       const body = await readJson(response)
       if (!response.ok) throw new Error(errorText(body, 'ログインできませんでした。'))
@@ -173,7 +173,7 @@ function SetNewPassword({ mode, token, uid, onComplete }) {
 }
 
 function Header({ user, onLogout }) {
-  return <header className="app-header"><div className="brand"><FileSpreadsheet /> internApp</div><span className="header-title">資産台帳</span><div className="header-user"><span>{user?.email || user?.username}</span><button onClick={onLogout} title="ログアウト"><LogOut /></button></div></header>
+  return <header className="app-header"><div className="brand"><FileSpreadsheet /> internApp</div><span className="header-title">資産台帳</span><div className="header-user"><span>{user?.email}</span><button onClick={onLogout} title="ログアウト"><LogOut /></button></div></header>
 }
 
 function Dashboard({ records, loading, onNew }) {
@@ -215,8 +215,8 @@ function RegisterFlow({ operationKey, operator, onCancel, onComplete }) {
   const [busy, setBusy] = useState(false)
   const operation = OPERATIONS[operationKey]
   const fields = [...TYPES[form.application_type].fields, ...OPERATION_FIELDS[operationKey]]
-  const operatorName = operator.profile?.display_name || operator.user?.email || operator.user?.username
-  const operatorEmail = operator.user?.email || operator.user?.username
+  const operatorName = operator.profile?.display_name || operator.user?.email
+  const operatorEmail = operator.user?.email
 
   const setDetail = (key, value) => setForm((current) => ({ ...current, details: { ...current.details, [key]: value } }))
   const next = () => {

@@ -130,7 +130,7 @@ class LoginViewTests(TestCase):
         response = post_json(
             self.client,
             "accounts:login",
-            {"username": self.user.username, "password": PASSWORD},
+            {"email": self.user.email, "password": PASSWORD},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -138,28 +138,38 @@ class LoginViewTests(TestCase):
         self.assertEqual(response.json()["user"]["email"], self.user.email)
         self.assertFalse(response.json()["profile_complete"])
 
-    def test_email_logs_in_user_whose_username_is_different(self):
+    def test_email_login_is_case_insensitive(self):
         response = post_json(
             self.client,
             "accounts:login",
-            {"username": "LOGIN@EXAMPLE.COM", "password": PASSWORD},
+            {"email": "LOGIN@EXAMPLE.COM", "password": PASSWORD},
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["authenticated"])
-        self.assertEqual(response.json()["user"]["username"], "login-user")
+        self.assertEqual(response.json()["user"], {"id": self.user.pk, "email": self.user.email})
 
     def test_invalid_password_does_not_log_user_in(self):
         response = post_json(
             self.client,
             "accounts:login",
-            {"username": self.user.username, "password": "wrong-password"},
+            {"email": self.user.email, "password": "wrong-password"},
         )
 
         self.assertEqual(response.status_code, 401)
         self.assertFalse(
             self.client.get(reverse("accounts:session")).json()["authenticated"]
         )
+
+    def test_username_only_login_is_rejected(self):
+        response = post_json(
+            self.client,
+            "accounts:login",
+            {"username": self.user.username, "password": PASSWORD},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("email", response.json()["fields"])
 
     def test_pending_email_verification_prevents_login(self):
         pending = User.objects.create_user(
@@ -173,7 +183,7 @@ class LoginViewTests(TestCase):
         response = post_json(
             self.client,
             "accounts:login",
-            {"username": pending.username, "password": PASSWORD},
+            {"email": pending.email, "password": PASSWORD},
         )
 
         self.assertEqual(response.status_code, 403)
@@ -463,7 +473,7 @@ class CSRFProtectionTests(TestCase):
         user = User.objects.create_user(username="csrf-user", password=PASSWORD)
         self.csrf_client.force_login(user)
         endpoints = [
-            ("accounts:login", "post", {"username": "csrf-user", "password": PASSWORD}),
+            ("accounts:login", "post", {"email": "csrf@example.com", "password": PASSWORD}),
             ("accounts:logout", "post", None),
             ("accounts:profile", "put", {"display_name": "山田", "department": "sales"}),
             ("accounts:email-verification-confirm", "post", {"token": "invalid"}),

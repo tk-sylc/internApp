@@ -112,7 +112,6 @@ def session_payload(user=None):
         "authenticated": True,
         "user": {
             "id": user.pk,
-            "username": user.get_username(),
             "email": user.email,
         },
         "profile_complete": profile_data is not None,
@@ -135,41 +134,42 @@ def login_view(request):
     if error_response:
         return error_response
 
-    username = data.get("username")
+    email = data.get("email")
     password = data.get("password")
-    if not isinstance(username, str) or not isinstance(password, str):
+    if not isinstance(email, str) or not isinstance(password, str):
         return field_error_response(
             {
-                "username": ["ログイン名を入力してください。"],
+                "email": ["会社メールアドレスを入力してください。"],
                 "password": ["パスワードを入力してください。"],
             }
         )
 
-    username = username.strip()
-    if "@" in username:
-        username = username.casefold()
+    email = normalize_email(email)
 
-    if not username or not password:
+    if not email or not password:
         return field_error_response(
             {
-                "username": [] if username else ["ログイン名を入力してください。"],
+                "email": [] if email else ["会社メールアドレスを入力してください。"],
                 "password": [] if password else ["パスワードを入力してください。"],
             }
         )
+    try:
+        validate_email(email)
+    except ValidationError:
+        return field_error_response(
+            {"email": ["正しいメールアドレスを入力してください。"]}
+        )
 
-    limited, window = consume_rate_limit("login", request, username)
+    limited, window = consume_rate_limit("login", request, email)
     if limited:
         return rate_limit_response(window)
 
-    if "@" in username:
-        email_matches = list(
-            User.objects.filter(email__iexact=username).order_by("pk")[:2]
-        )
-        candidate = email_matches[0] if len(email_matches) == 1 else None
-    else:
-        candidate = User.objects.filter(username__iexact=username).first()
+    email_matches = list(
+        User.objects.filter(email__iexact=email).order_by("pk")[:2]
+    )
+    candidate = email_matches[0] if len(email_matches) == 1 else None
 
-    authentication_username = candidate.get_username() if candidate else username
+    authentication_username = candidate.get_username() if candidate else email
     user = authenticate(
         request,
         username=authentication_username,
@@ -194,7 +194,7 @@ def login_view(request):
             )
 
         return JsonResponse(
-            {"detail": "ログイン名またはパスワードが正しくありません。"},
+            {"detail": "メールアドレスまたはパスワードが正しくありません。"},
             status=401,
         )
 
