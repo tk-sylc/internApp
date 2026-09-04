@@ -32,10 +32,11 @@
 
 ### リポジトリとブランチ
 
-- 現在の実装は `django-project/` をDjangoバックエンドとして使用する
+- 現在の実装は `backend/` をDjangoバックエンドとして使用する
 - リポジトリ名とローカルフォルダ名の `internApp` は接続情報として残す
 - 開発内容のpush先は `feature/hasuhasu` とし、`main`は明示的な指示があるまで更新しない
-- 共同開発者による別構成の実装はGit履歴に残し、バックエンドが二重にならないよう現在の作業ツリーには混在させない
+- 共同開発者の `backend/` 構成とMySQL方針を採用し、現在の認証・入力・Excel機能をその中へ統合する
+- Djangoアプリは役割を明確にするため、認証の `accounts` と機器管理の `asset_requests` に分けたまま残す
 
 ## 対象にする業務フロー
 
@@ -93,9 +94,9 @@ PDFファイル自体はアプリへアップロードせず、従来のメー�
 ## 構成
 
 - `src/`: Reactの担当者画面
-- `django-project/accounts/`: ログイン・アカウント管理
-- `django-project/asset_requests/`: 承認済み手続きとExcel出力API
-- `django-project/approved_ledgers/`: 生成したExcel（Git管理外）
+- `backend/accounts/`: ログイン・アカウント管理
+- `backend/asset_requests/`: 承認済み手続きとExcel出力API
+- `backend/approved_ledgers/`: 生成したExcel（Git管理外）
 
 旧「社員がアプリから申請する」実装は、元の `tk-sylc/sylc` リポジトリへ統合済みです。`internApp` の復元用ブランチ `archive/asset-request-portal` にも切り替え前の状態を保存しています。
 
@@ -106,7 +107,7 @@ PDFファイル自体はアプリへアップロードせず、従来のメー�
 ### 最初の管理者を作る
 
 ```powershell
-cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\django-project
+cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\backend
 .\.venv\Scripts\python.exe manage.py createsuperuser
 ```
 
@@ -141,15 +142,31 @@ $env:COMPANY_EMAIL_DOMAINS = "example.co.jp"
 
 ## セットアップ
 
-Pythonをインストールしたあと、PowerShellで実行します。
+PythonとMySQL Serverをインストールします。最初にMySQLへ管理者で接続し、開発用のデータベースと専用ユーザーを作成します。
+
+```sql
+CREATE DATABASE intern_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'intern_app'@'localhost' IDENTIFIED BY '任意の強いパスワード';
+GRANT ALL PRIVILEGES ON intern_app.* TO 'intern_app'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+次にPowerShellでバックエンドを準備します。
 
 ```powershell
-cd django-project
+cd backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:MYSQL_DATABASE = "intern_app"
+$env:MYSQL_USER = "intern_app"
+$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
+$env:MYSQL_HOST = "127.0.0.1"
+$env:MYSQL_PORT = "3306"
 .\.venv\Scripts\python.exe manage.py migrate
 .\.venv\Scripts\python.exe manage.py createsuperuser
 ```
+
+MySQLの接続情報はターミナルを開き直すと消えます。開発中はDjangoを起動するPowerShellで毎回設定してください。パスワードはREADMEやGitへ書き込みません。
 
 フロントエンドを準備します。
 
@@ -163,7 +180,10 @@ npm.cmd install
 1つ目のPowerShell:
 
 ```powershell
-cd django-project
+cd backend
+$env:MYSQL_DATABASE = "intern_app"
+$env:MYSQL_USER = "intern_app"
+$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
 .\.venv\Scripts\python.exe manage.py runserver
 ```
 
@@ -196,12 +216,36 @@ python manage.py runserver
 
 ターミナルの先頭に `(.venv)` と表示されていれば、`python` だけでinternApp専用環境が使われます。サーバーを終了するときは `Ctrl+C` を押します。
 
-## データとExcelの保存場所
+## データベースとExcelの保存場所
 
-- ローカルデータベース: `django-project/db.sqlite3`
-- 生成したExcel台帳: `django-project/approved_ledgers/`
+- 通常使用するデータベース: MySQLの `intern_app`
+- 移行前のローカルデータ: `backend/db.sqlite3`（保護のため当面残す・Git管理外）
+- 生成したExcel台帳: `backend/approved_ledgers/`（Git管理外）
 
 Excelは処理を1件登録したときに、機器種別ごとに生成・更新されます。データベースとExcelはGitHubへpushされません。
+
+### 旧SQLiteデータをMySQLへ移す場合
+
+まずSQLiteを明示してデータを書き出します。
+
+```powershell
+cd backend
+$env:DATABASE_ENGINE = "sqlite"
+.\.venv\Scripts\python.exe manage.py dumpdata --natural-foreign --natural-primary --exclude contenttypes --exclude auth.permission --exclude sessions --exclude admin.logentry --indent 2 --output sqlite-data.json
+```
+
+次に、同じPowerShellでMySQLへ切り替えて移行します。
+
+```powershell
+$env:DATABASE_ENGINE = "mysql"
+$env:MYSQL_DATABASE = "intern_app"
+$env:MYSQL_USER = "intern_app"
+$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py loaddata sqlite-data.json
+```
+
+移行が確認できるまでは `backend/db.sqlite3` を削除しないでください。
 
 ## よくあるエラー
 
@@ -218,7 +262,7 @@ PC全体のPythonを使っている可能性があります。次を実行しま
 現在いるフォルダが違います。移動してから起動します。
 
 ```powershell
-cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\django-project
+cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\backend
 .\.venv\Scripts\python.exe manage.py runserver
 ```
 
@@ -239,10 +283,10 @@ cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\django-project
 ## テスト
 
 ```powershell
-cd django-project
-.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
-.\.venv\Scripts\python.exe manage.py check
-.\.venv\Scripts\python.exe manage.py test accounts asset_requests
+cd backend
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run --settings=config.test_settings
+.\.venv\Scripts\python.exe manage.py check --settings=config.test_settings
+.\.venv\Scripts\python.exe manage.py test accounts asset_requests --settings=config.test_settings
 ```
 
 ```powershell

@@ -4,10 +4,13 @@
 
 ## Start the development server
 
-Open a new PowerShell terminal, then run:
+Open a new PowerShell terminal at the repository root, then run:
 
 ```powershell
-cd django-project
+cd backend
+$env:MYSQL_DATABASE = "intern_app"
+$env:MYSQL_USER = "intern_app"
+$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
 .\.venv\Scripts\python.exe manage.py runserver
 ```
 
@@ -20,17 +23,20 @@ Stop it with `Ctrl+C`.
 ## Recreate the environment
 
 ```powershell
-cd django-project
-py -m venv .venv
+cd backend
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:MYSQL_DATABASE = "intern_app"
+$env:MYSQL_USER = "intern_app"
+$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
 .\.venv\Scripts\python.exe manage.py migrate
 ```
 
-To use `py manage.py runserver` instead, activate the virtual environment for
-the current PowerShell session first:
+To use `python manage.py runserver` instead, activate the virtual environment
+for the current PowerShell session first:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\.venv\Scripts\Activate.ps1
-py manage.py runserver
+python manage.py runserver
 ```

@@ -138,13 +138,43 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+#
+# MySQL is the normal development/production database. SQLite remains available
+# explicitly for tests and for exporting data from the former local database.
+DATABASE_ENGINE = os.environ.get('DATABASE_ENGINE', 'mysql').casefold()
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if DATABASE_ENGINE == 'sqlite':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / os.environ.get(
+                'SQLITE_DATABASE_NAME',
+                'db.sqlite3',
+            ),
+        },
     }
-}
+elif DATABASE_ENGINE == 'mysql':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.environ.get('MYSQL_DATABASE', 'intern_app'),
+            'USER': os.environ.get('MYSQL_USER', 'intern_app'),
+            'PASSWORD': os.environ.get('MYSQL_PASSWORD', ''),
+            'HOST': os.environ.get('MYSQL_HOST', '127.0.0.1'),
+            'PORT': os.environ.get('MYSQL_PORT', '3306'),
+            'CONN_MAX_AGE': 60,
+            'CONN_HEALTH_CHECKS': True,
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+                'isolation_level': 'read committed',
+            },
+        },
+    }
+else:
+    raise ValueError(
+        "DATABASE_ENGINE must be either 'mysql' or 'sqlite'."
+    )
 
 
 # Password validation
