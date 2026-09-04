@@ -207,6 +207,17 @@ class ApprovedApplication(models.Model):
         on_delete=models.PROTECT,
         related_name="approved_applications_entered",
     )
+    entered_by_name = models.CharField(
+        "登録責任者氏名",
+        max_length=100,
+        blank=True,
+        editable=False,
+    )
+    entered_by_email = models.EmailField(
+        "登録責任者メールアドレス",
+        blank=True,
+        editable=False,
+    )
     created_at = models.DateTimeField("登録日時", auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField("更新日時", auto_now=True)
 

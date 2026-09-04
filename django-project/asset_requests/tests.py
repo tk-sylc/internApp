@@ -625,7 +625,13 @@ class ApprovedApplicationAPITests(APITestCase):
         self.ledger_directory = temporary_path / "ledgers"
         self.user = get_user_model().objects.create_user(
             username="entry-operator",
+            email="operator@example.com",
             password="Test-password-123!",
+        )
+        UserProfile.objects.create(
+            user=self.user,
+            display_name="台帳 責任者",
+            department=Department.SYSTEM,
         )
         self.client.force_login(self.user)
         self.url = reverse("asset_requests:approved-application-list-create")
@@ -656,10 +662,17 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         record = ApprovedApplication.objects.get()
         self.assertEqual(record.entered_by, self.user)
+        self.assertEqual(record.entered_by_name, "台帳 責任者")
+        self.assertEqual(record.entered_by_email, "operator@example.com")
+        self.assertEqual(response.data["entered_by_name"], "台帳 責任者")
+        self.assertEqual(response.data["entered_by_email"], "operator@example.com")
         self.assertIs(response.data["ledger_synced"], True)
-        self.assertTrue(
-            (self.ledger_directory / "承認済み_PC管理台帳.xlsx").exists()
-        )
+        ledger_path = self.ledger_directory / "承認済み_PC管理台帳.xlsx"
+        self.assertTrue(ledger_path.exists())
+        worksheet = load_workbook(ledger_path).active
+        headers = [cell.value for cell in worksheet[1]]
+        operator_column = headers.index("登録担当者") + 1
+        self.assertEqual(worksheet.cell(row=2, column=operator_column).value, "台帳 責任者")
 
     def test_purchase_does_not_require_management_number(self):
         payload = self.get_payload()

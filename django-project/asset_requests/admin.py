@@ -3,6 +3,8 @@ from datetime import datetime
 
 from django.contrib import admin
 
+from accounts.models import UserProfile
+
 from .models import (
     ApprovedApplication,
     ExternalStorageRequest,
@@ -145,7 +147,8 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
         "applicant_name",
         "department",
         "approved_date",
-        "entered_by",
+        "entered_by_name",
+        "entered_by_email",
         "created_at",
     )
     list_filter = (
@@ -155,8 +158,21 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
         "approved_date",
         "created_at",
     )
-    search_fields = ("applicant_name", "department", "entered_by__username")
-    readonly_fields = ("reference_number", "entered_by", "created_at", "updated_at")
+    search_fields = (
+        "applicant_name",
+        "department",
+        "entered_by_name",
+        "entered_by_email",
+        "entered_by__username",
+    )
+    readonly_fields = (
+        "reference_number",
+        "entered_by",
+        "entered_by_name",
+        "entered_by_email",
+        "created_at",
+        "updated_at",
+    )
     date_hierarchy = "created_at"
     ordering = ("-created_at",)
 
@@ -167,4 +183,9 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         if not change and not obj.entered_by_id:
             obj.entered_by = request.user
+            try:
+                obj.entered_by_name = request.user.profile.display_name.strip()
+            except UserProfile.DoesNotExist:
+                obj.entered_by_name = request.user.email or request.user.get_username()
+            obj.entered_by_email = request.user.email
         super().save_model(request, obj, form, change)

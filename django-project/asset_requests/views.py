@@ -85,11 +85,24 @@ class SmartphoneRequestCreateView(BaseAssetRequestCreateView):
 
 
 class ApprovedApplicationListCreateView(generics.ListCreateAPIView):
-    queryset = ApprovedApplication.objects.select_related("entered_by").all()
+    queryset = ApprovedApplication.objects.select_related("entered_by__profile").all()
     serializer_class = ApprovedApplicationSerializer
 
     def perform_create(self, serializer):
-        serializer.save(entered_by=self.request.user)
+        try:
+            entered_by_name = self.request.user.profile.display_name.strip()
+        except UserProfile.DoesNotExist:
+            entered_by_name = ""
+        entered_by_email = self.request.user.email.strip()
+        serializer.save(
+            entered_by=self.request.user,
+            entered_by_name=(
+                entered_by_name
+                or entered_by_email
+                or self.request.user.get_username()
+            ),
+            entered_by_email=entered_by_email,
+        )
 
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)

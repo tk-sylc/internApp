@@ -9,6 +9,8 @@ from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from accounts.models import UserProfile
+
 from .models import ApprovedApplication
 
 
@@ -74,6 +76,16 @@ def _excel_datetime(value):
     return value
 
 
+def _operator_name(record):
+    if record.entered_by_name:
+        return record.entered_by_name
+    try:
+        display_name = record.entered_by.profile.display_name.strip()
+    except UserProfile.DoesNotExist:
+        display_name = ""
+    return display_name or record.entered_by.email or record.entered_by.get_username()
+
+
 def sync_approved_ledger(application_type):
     columns = DETAIL_COLUMNS.get(application_type)
     if columns is None:
@@ -99,7 +111,7 @@ def sync_approved_ledger(application_type):
 
     queryset = (
         ApprovedApplication.objects.filter(application_type=application_type)
-        .select_related("entered_by")
+        .select_related("entered_by__profile")
         .order_by("pk")
     )
     for record in queryset:
@@ -113,7 +125,7 @@ def sync_approved_ledger(application_type):
             _safe_value(record.applicant_name),
             _safe_value(record.department),
             record.approved_date,
-            _safe_value(record.entered_by.get_username()),
+            _safe_value(_operator_name(record)),
             _excel_datetime(record.created_at),
             *detail_values,
             _safe_value(record.notes),

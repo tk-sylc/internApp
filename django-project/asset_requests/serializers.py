@@ -1,6 +1,8 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from accounts.models import UserProfile
+
 from .models import (
     ApprovedApplication,
     ExternalStorageRequest,
@@ -180,10 +182,8 @@ class SmartphoneRequestSerializer(BaseAssetRequestSerializer):
 
 class ApprovedApplicationSerializer(serializers.ModelSerializer):
     reference_number = serializers.CharField(read_only=True)
-    entered_by_name = serializers.CharField(
-        source="entered_by.get_username",
-        read_only=True,
-    )
+    entered_by_name = serializers.SerializerMethodField()
+    entered_by_email = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovedApplication
@@ -198,9 +198,28 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "details",
             "notes",
             "entered_by_name",
+            "entered_by_email",
             "created_at",
         ]
-        read_only_fields = ["id", "reference_number", "entered_by_name", "created_at"]
+        read_only_fields = [
+            "id",
+            "reference_number",
+            "entered_by_name",
+            "entered_by_email",
+            "created_at",
+        ]
+
+    def get_entered_by_name(self, obj):
+        if obj.entered_by_name:
+            return obj.entered_by_name
+        try:
+            display_name = obj.entered_by.profile.display_name.strip()
+        except UserProfile.DoesNotExist:
+            display_name = ""
+        return display_name or obj.entered_by.email or obj.entered_by.get_username()
+
+    def get_entered_by_email(self, obj):
+        return obj.entered_by_email or obj.entered_by.email
 
     def validate_approved_date(self, value):
         if value > timezone.localdate():
