@@ -636,6 +636,7 @@ class ApprovedApplicationAPITests(APITestCase):
     def get_payload(self):
         return {
             "application_type": "pc",
+            "operation_type": "loan",
             "applicant_name": "申請 太郎",
             "department": "営業部",
             "approved_date": timezone.localdate().isoformat(),
@@ -645,9 +646,12 @@ class ApprovedApplicationAPITests(APITestCase):
                 content_type="application/pdf",
             ),
             "details": json.dumps({
+                "device_name": "ノートPC",
                 "user_name": "利用 花子",
                 "management_number": "PC-001",
-                "start_date": timezone.localdate().isoformat(),
+                "operation_date": timezone.localdate().isoformat(),
+                "expected_return_date": relative_date(30),
+                "quantity": 1,
                 "location": "東京本社",
                 "purpose": "顧客訪問",
             }, ensure_ascii=False),
@@ -663,8 +667,37 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertTrue(record.source_pdf.name.endswith("approved.pdf"))
         self.assertIs(response.data["ledger_synced"], True)
         self.assertTrue(
-            (self.ledger_directory / "承認済み_PC貸出管理台帳.xlsx").exists()
+            (self.ledger_directory / "承認済み_PC管理台帳.xlsx").exists()
         )
+
+    def test_purchase_does_not_require_management_number(self):
+        payload = self.get_payload()
+        payload["operation_type"] = "purchase"
+        payload["details"] = json.dumps(
+            {
+                "device_name": "ノートPC",
+                "operation_date": timezone.localdate().isoformat(),
+                "quantity": 2,
+                "purpose": "新入社員用",
+            },
+            ensure_ascii=False,
+        )
+
+        response = self.client.post(self.url, payload, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn("management_number", ApprovedApplication.objects.get().details)
+
+    def test_loan_requires_management_number(self):
+        payload = self.get_payload()
+        details = json.loads(payload["details"])
+        details.pop("management_number")
+        payload["details"] = json.dumps(details, ensure_ascii=False)
+
+        response = self.client.post(self.url, payload, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ApprovedApplication.objects.exists())
 
     def test_non_pdf_upload_is_rejected(self):
         payload = self.get_payload()

@@ -140,6 +140,7 @@ class LANRequestAdmin(BaseAssetRequestAdmin):
 class ApprovedApplicationAdmin(admin.ModelAdmin):
     list_display = (
         "reference_number",
+        "operation_type",
         "application_type",
         "applicant_name",
         "department",
@@ -147,7 +148,13 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
         "entered_by",
         "created_at",
     )
-    list_filter = ("application_type", "department", "approved_date", "created_at")
+    list_filter = (
+        "operation_type",
+        "application_type",
+        "department",
+        "approved_date",
+        "created_at",
+    )
     search_fields = ("applicant_name", "department", "entered_by__username")
     readonly_fields = ("reference_number", "entered_by", "created_at", "updated_at")
     date_hierarchy = "created_at"

@@ -14,47 +14,42 @@ from .models import ApprovedApplication
 
 DETAIL_COLUMNS = {
     "pc": (
-        ("利用者氏名", "user_name"),
-        ("管理番号", "management_number"),
-        ("利用開始日", "start_date"),
-        ("利用場所", "location"),
-        ("利用目的", "purpose"),
+        ("機種・端末名", "device_name"),
     ),
     "memory": (
-        ("利用者氏名", "user_name"),
         ("機器名", "device_name"),
         ("容量", "capacity"),
-        ("貸出日", "loan_date"),
-        ("利用場所", "location"),
-        ("利用目的", "purpose"),
     ),
     "lan": (
         ("機器種別", "device_type"),
         ("機器名", "device_name"),
-        ("必要個数", "quantity"),
-        ("利用開始日", "start_date"),
-        ("返却予定日", "return_date"),
-        ("利用場所", "location"),
-        ("利用目的", "purpose"),
     ),
     "phone": (
         ("OS", "os"),
-        ("回線区分", "line_type"),
         ("機種", "model_name"),
-        ("台数", "quantity"),
-        ("購入日", "purchase_date"),
         ("容量", "storage"),
-        ("SIM", "sim_required"),
-        ("利用目的", "purpose"),
     ),
     "other": (("転記内容", "_all"),),
 }
 
+OPERATION_COLUMNS = (
+    ("管理番号", "management_number"),
+    ("処理日", "operation_date"),
+    ("数量", "quantity"),
+    ("利用者氏名", "user_name"),
+    ("返却予定日", "expected_return_date"),
+    ("利用場所", "location"),
+    ("利用目的", "purpose"),
+    ("返却時の状態", "condition"),
+    ("廃棄理由", "disposal_reason"),
+    ("廃棄方法", "disposal_method"),
+)
+
 FILE_NAMES = {
-    "pc": "承認済み_PC貸出管理台帳.xlsx",
-    "memory": "承認済み_外部記憶装置貸出管理台帳.xlsx",
-    "lan": "承認済み_LAN機器貸出管理台帳.xlsx",
-    "phone": "承認済み_スマートフォン購入管理台帳.xlsx",
+    "pc": "承認済み_PC管理台帳.xlsx",
+    "memory": "承認済み_外部記憶装置管理台帳.xlsx",
+    "lan": "承認済み_LAN機器管理台帳.xlsx",
+    "phone": "承認済み_スマートフォン管理台帳.xlsx",
     "other": "承認済み_その他申請管理台帳.xlsx",
 }
 
@@ -93,8 +88,9 @@ def sync_approved_ledger(application_type):
     worksheet.title = "転記データ"
     worksheet.freeze_panes = "A2"
 
-    common_headers = ("受付番号", "申請者氏名", "所属部署", "承認日", "元PDF", "登録担当者", "登録日時")
-    worksheet.append([*common_headers, *(label for label, _key in columns), "担当者メモ"])
+    common_headers = ("受付番号", "処理区分", "申請者氏名", "所属部署", "承認日", "元PDF", "登録担当者", "登録日時")
+    all_columns = (*columns, *OPERATION_COLUMNS)
+    worksheet.append([*common_headers, *(label for label, _key in all_columns), "担当者メモ"])
     header_fill = PatternFill(fill_type="solid", fgColor="17376D")
     for cell in worksheet[1]:
         cell.font = Font(color="FFFFFF", bold=True)
@@ -108,11 +104,12 @@ def sync_approved_ledger(application_type):
     )
     for record in queryset:
         detail_values = []
-        for _label, key in columns:
+        for _label, key in all_columns:
             value = record.details if key == "_all" else record.details.get(key, "")
             detail_values.append(_safe_value(value))
         worksheet.append([
             record.reference_number,
+            record.get_operation_type_display(),
             _safe_value(record.applicant_name),
             _safe_value(record.department),
             record.approved_date,

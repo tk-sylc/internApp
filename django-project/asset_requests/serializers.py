@@ -10,12 +10,32 @@ from .models import (
 )
 
 
-APPROVED_DETAIL_FIELDS = {
-    "pc": {"user_name", "management_number", "start_date", "location", "purpose"},
-    "memory": {"user_name", "device_name", "capacity", "loan_date", "location", "purpose"},
-    "lan": {"device_type", "device_name", "quantity", "start_date", "return_date", "location", "purpose"},
-    "phone": {"os", "line_type", "model_name", "quantity", "purchase_date", "storage", "sim_required", "purpose"},
+APPROVED_TYPE_DETAIL_FIELDS = {
+    "pc": {"device_name"},
+    "memory": {"device_name", "capacity"},
+    "lan": {"device_type", "device_name"},
+    "phone": {"os", "model_name", "storage"},
     "other": {"summary"},
+}
+
+APPROVED_OPERATION_DETAIL_FIELDS = {
+    "purchase": {"operation_date", "quantity", "purpose"},
+    "loan": {
+        "management_number",
+        "user_name",
+        "operation_date",
+        "expected_return_date",
+        "quantity",
+        "location",
+        "purpose",
+    },
+    "return": {"management_number", "operation_date", "condition"},
+    "disposal": {
+        "management_number",
+        "operation_date",
+        "disposal_reason",
+        "disposal_method",
+    },
 }
 
 
@@ -171,6 +191,7 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "id",
             "reference_number",
             "application_type",
+            "operation_type",
             "applicant_name",
             "department",
             "approved_date",
@@ -207,13 +228,19 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         application_type = attrs.get("application_type")
+        operation_type = attrs.get("operation_type")
         details = attrs.get("details")
-        expected_fields = APPROVED_DETAIL_FIELDS.get(application_type)
+        type_fields = APPROVED_TYPE_DETAIL_FIELDS.get(application_type)
+        operation_fields = APPROVED_OPERATION_DETAIL_FIELDS.get(operation_type)
 
         if not isinstance(details, dict):
             raise serializers.ValidationError({"details": "転記項目を入力してください。"})
-        if expected_fields is None:
+        if type_fields is None:
             raise serializers.ValidationError({"application_type": "申請種別が不正です。"})
+        if operation_fields is None:
+            raise serializers.ValidationError({"operation_type": "処理区分が不正です。"})
+
+        expected_fields = type_fields | operation_fields
 
         cleaned_details = {
             key: value

@@ -178,10 +178,22 @@ class ApprovedApplication(models.Model):
         SMARTPHONE = "phone", "スマートフォン購入"
         OTHER = "other", "その他"
 
+    class OperationType(models.TextChoices):
+        PURCHASE = "purchase", "購入"
+        DISPOSAL = "disposal", "廃棄"
+        LOAN = "loan", "貸出"
+        RETURN = "return", "返却"
+
     application_type = models.CharField(
         "申請種別",
         max_length=20,
         choices=ApplicationType.choices,
+        db_index=True,
+    )
+    operation_type = models.CharField(
+        "処理区分",
+        max_length=20,
+        choices=OperationType.choices,
         db_index=True,
     )
     applicant_name = models.CharField("申請者氏名", max_length=100)
