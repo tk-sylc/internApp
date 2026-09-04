@@ -75,7 +75,7 @@ const USAGE_FIELDS = {
   purchase: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
   loan: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
   return: [['usage_end_date', '利用終了日', 'date'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']], ['location', '利用場所']],
-  disposal: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法'], ['location', '利用場所']],
+  disposal: [['disposal_date', '廃棄日', 'date'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法'], ['location', '利用場所']],
 }
 
 const OPERATION_FIELDS = {

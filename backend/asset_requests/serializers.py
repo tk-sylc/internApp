@@ -63,6 +63,7 @@ APPROVED_OPERATION_DETAIL_FIELDS = {
     "return": {"management_number", "condition"},
     "disposal": {
         "management_number",
+        "disposal_date",
         "disposal_reason",
         "disposal_method",
     },
@@ -294,6 +295,9 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
         # 利用開始日は保存しない。
         if operation_type == "return":
             cleaned_details.pop("usage_start_date", None)
+        elif operation_type == "disposal":
+            cleaned_details.pop("usage_start_date", None)
+            cleaned_details.pop("usage_end_date", None)
 
         attrs["details"] = cleaned_details
         return attrs

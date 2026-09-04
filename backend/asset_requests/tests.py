@@ -740,6 +740,19 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertNotIn("usage_start_date", details)
         self.assertEqual(details["usage_end_date"], relative_date(30))
 
+    def test_disposal_uses_only_disposal_date(self):
+        payload = self.get_payload()
+        payload["operation_type"] = "disposal"
+        payload["details"]["disposal_date"] = timezone.localdate().isoformat()
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        details = ApprovedApplication.objects.get().details
+        self.assertEqual(details["disposal_date"], timezone.localdate().isoformat())
+        self.assertNotIn("usage_start_date", details)
+        self.assertNotIn("usage_end_date", details)
+
     def test_phone_lan_and_memory_fields_are_preserved(self):
         cases = {
             "phone": {

@@ -60,6 +60,7 @@ OPERATION_COLUMNS = (
     ("利用開始日", "usage_start_date"),
     ("利用終了日", "usage_end_date"),
     ("利用場所", "location"),
+    ("廃棄日", "disposal_date"),
     ("数量", "quantity"),
     ("目的", "purpose"),
     ("返却時の状態", "condition"),
