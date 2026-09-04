@@ -649,16 +649,13 @@ class ApprovedApplicationAPITests(APITestCase):
                 "device_name": "ノートPC",
                 "cpu_ghz": "3.2",
                 "ram_gb": "16",
-                "os": "Windows",
-                "os_version": "11 Pro",
+                "os": "Windows 11 Pro",
                 "security_software": "VBC（ウイルスバスター Corp.）",
                 "antivirus_installed": "導入済み",
                 "office_version": "Microsoft 365",
-                "browser": "Microsoft Edge",
-                "browser_version": "140",
+                "browser_version": "Microsoft Edge 140",
                 "adobe_reader_version": "2025.001",
                 "flash_player_version": "未導入",
-                "performance": "標準業務用",
                 "management_number": "PC-001",
                 "usage_start_date": timezone.localdate().isoformat(),
                 "usage_end_date": relative_date(30),
@@ -687,6 +684,8 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertIn("機種名", headers)
         self.assertIn("CPU（GHz）", headers)
         self.assertIn("RAM（GB）", headers)
+        self.assertIn("OS・バージョン", headers)
+        self.assertIn("Browserバージョン", headers)
         self.assertIn("ウイルス対策ソフト導入確認", headers)
         self.assertIn("Officeバージョン", headers)
         self.assertIn("Adobe Readerバージョン", headers)
@@ -697,6 +696,9 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertNotIn("承認日", headers)
         self.assertNotIn("購入日", headers)
         self.assertNotIn("利用者氏名", headers)
+        self.assertNotIn("OSバージョン", headers)
+        self.assertNotIn("ブラウザ", headers)
+        self.assertNotIn("性能", headers)
         operator_column = headers.index("登録担当者") + 1
         self.assertEqual(worksheet.cell(row=2, column=operator_column).value, "台帳 責任者")
 
@@ -741,11 +743,9 @@ class ApprovedApplicationAPITests(APITestCase):
     def test_phone_lan_and_memory_fields_are_preserved(self):
         cases = {
             "phone": {
-                "os": "iOS",
-                "os_version": "26",
+                "os": "iOS 26",
                 "model_name": "iPhone",
                 "storage": "256GB",
-                "performance": "業務用",
                 "phone_number": "090-0000-0000",
                 "carrier": "テストキャリア",
                 "security_software": "テスト製品",
@@ -785,6 +785,32 @@ class ApprovedApplicationAPITests(APITestCase):
                 record = ApprovedApplication.objects.latest("pk")
                 expected = {key: value for key, value in details.items() if value}
                 self.assertDictEqual(record.details, expected)
+
+    def test_removed_technical_fields_are_not_saved(self):
+        response = self.client.post(
+            self.url,
+            {
+                "application_type": "pc",
+                "operation_type": "purchase",
+                "details": {
+                    "os": "Windows 11 Pro",
+                    "os_version": "重複項目",
+                    "browser": "重複項目",
+                    "browser_version": "Microsoft Edge 140",
+                    "performance": "削除項目",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertDictEqual(
+            ApprovedApplication.objects.get().details,
+            {
+                "os": "Windows 11 Pro",
+                "browser_version": "Microsoft Edge 140",
+            },
+        )
 
     def test_anonymous_user_cannot_access_records(self):
         self.client.logout()

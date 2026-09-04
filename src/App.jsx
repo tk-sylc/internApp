@@ -16,32 +16,29 @@ const OPERATIONS = {
 const TYPES = {
   pc: {
     label: 'PC',
-    fields: [
-      ['device_name', '機種名'],
+    fields: [['device_name', '機種名']],
+    secondaryFields: [
       ['cpu_ghz', 'CPU（GHz）', 'number', null, { min: 0, step: 0.1 }],
       ['ram_gb', 'RAM（GB）', 'number', null, { min: 0, step: 1 }],
-      ['os', 'OS'],
-      ['os_version', 'OSバージョン'],
-      ['security_software', 'セキュリティソフト', 'select', ['VBC（ウイルスバスター Corp.）', 'その他', 'なし', '不明']],
+      ['os', 'OS・バージョン'],
+      ['security_software', 'セキュリティソフト'],
       ['antivirus_installed', 'ウイルス対策ソフト導入確認', 'select', ['導入済み', '未導入', '不明']],
       ['office_version', 'Officeバージョン'],
-      ['browser', 'ブラウザ'],
-      ['browser_version', 'ブラウザバージョン'],
+      ['browser_version', 'Browserバージョン'],
       ['adobe_reader_version', 'Adobe Readerバージョン'],
       ['flash_player_version', 'Flash Playerバージョン'],
-      ['performance', '性能', 'textarea'],
     ],
   },
   phone: {
     label: 'スマートフォン',
     fields: [
-      ['os', 'OS', 'select', ['iOS', 'Android', 'その他', '不明']],
-      ['os_version', 'OSバージョン'],
       ['model_name', '機種名'],
       ['storage', '容量'],
-      ['performance', '性能', 'textarea'],
       ['phone_number', '電話番号', 'tel'],
       ['carrier', 'キャリア名'],
+    ],
+    secondaryFields: [
+      ['os', 'OS・バージョン'],
       ['security_software', 'セキュリティソフト'],
       ['antivirus_installed', 'ウイルス対策ソフト導入確認', 'select', ['導入済み', '未導入', '不明']],
     ],
@@ -71,15 +68,15 @@ const TYPES = {
 }
 
 const USAGE_FIELDS = {
-  purchase: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['location', '利用場所']],
-  loan: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['location', '利用場所']],
+  purchase: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
+  loan: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
   return: [['usage_end_date', '利用終了日', 'date'], ['location', '利用場所']],
   disposal: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['location', '利用場所']],
 }
 
 const OPERATION_FIELDS = {
-  purchase: [['quantity', '数量', 'number'], ['purpose', '目的', 'textarea']],
-  loan: [['management_number', '管理番号'], ['quantity', '数量', 'number', null, { min: 1, step: 1 }], ['purpose', '目的', 'textarea']],
+  purchase: [['quantity', '数量', 'number', null, { min: 1, step: 1 }]],
+  loan: [['management_number', '管理番号'], ['quantity', '数量', 'number', null, { min: 1, step: 1 }]],
   return: [['management_number', '管理番号'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']]],
   disposal: [['management_number', '管理番号'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法']],
 }
@@ -263,7 +260,13 @@ function RegisterFlow({ operationKey, operator, onCancel, onComplete }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const operation = OPERATIONS[operationKey]
-  const fields = [...TYPES[form.application_type].fields, ...USAGE_FIELDS[operationKey], ...OPERATION_FIELDS[operationKey]]
+  const selectedType = TYPES[form.application_type]
+  const fields = [
+    ...selectedType.fields,
+    ...OPERATION_FIELDS[operationKey],
+    ...USAGE_FIELDS[operationKey],
+    ...(selectedType.secondaryFields ?? []),
+  ]
   const operatorName = operator.profile?.display_name || operator.user?.email
   const operatorEmail = operator.user?.email
 
