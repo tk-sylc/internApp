@@ -43,9 +43,9 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 
-# Account registration and recovery
+# Account invitation and recovery
 #
-# Registration is deliberately disabled when no company domain is configured.
+# Invitations are deliberately disabled when no company domain is configured.
 # Example (PowerShell):
 #   $env:COMPANY_EMAIL_DOMAINS = "example.co.jp"
 COMPANY_EMAIL_DOMAINS = tuple(
@@ -60,9 +60,6 @@ FRONTEND_BASE_URL = os.environ.get(
 EMAIL_VERIFICATION_TIMEOUT = int(
     os.environ.get('EMAIL_VERIFICATION_TIMEOUT', '86400')
 )
-EMAIL_VERIFICATION_RESEND_COOLDOWN = int(
-    os.environ.get('EMAIL_VERIFICATION_RESEND_COOLDOWN', '60')
-)
 PASSWORD_RESET_TIMEOUT = int(os.environ.get('PASSWORD_RESET_TIMEOUT', '3600'))
 DEFAULT_FROM_EMAIL = os.environ.get(
     'DEFAULT_FROM_EMAIL',
@@ -73,9 +70,7 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 # Use a shared cache and an infrastructure-level limiter in a multi-process deployment.
 AUTH_RATE_LIMITS = {
     'login': (10, 300),
-    'register': (5, 3600),
     'email_verification': (20, 900),
-    'email_resend': (3, 3600),
     'password_reset': (3, 3600),
     'password_reset_confirm': (10, 3600),
 }

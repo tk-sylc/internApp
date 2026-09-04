@@ -11,6 +11,15 @@ svg { width: 19px; height: 19px; }
 .login-logo svg { width: 23px; height: 23px; }
 .simple-login h1 { margin: 10px 0 4px; font-size: 1.75rem; letter-spacing: -.04em; }
 .simple-login p { margin: 0; color: #7b8493; font-size: .87rem; }
+.auth-heading { display: flex; align-items: center; gap: 12px; }
+.auth-heading > svg { width: 30px; height: 30px; padding: 6px; color: #285fc4; background: #edf3ff; border-radius: 9px; }
+.auth-heading h1 { margin-top: 0; }
+.auth-form { display: grid; gap: 18px; }
+.auth-form .alert { margin-top: 0; }
+.auth-link { padding: 2px; border: 0; color: #285fc4; background: transparent; font-size: .82rem; font-weight: 700; text-align: center; }
+.auth-link:hover { text-decoration: underline; }
+.auth-note { padding-top: 16px; border-top: 1px solid #eaedf1; line-height: 1.65; }
+.password-hint { margin-top: -8px !important; line-height: 1.5; }
 label { display: grid; gap: 8px; color: #3a4558; font-size: .83rem; font-weight: 700; }
 input, select, textarea { width: 100%; border: 1px solid #d8dde5; border-radius: 9px; padding: 11px 12px; color: #182033; background: #fff; outline: 0; transition: .15s; }
 input:focus, select:focus, textarea:focus { border-color: #356bd4; box-shadow: 0 0 0 3px #356bd417; }
@@ -21,6 +30,7 @@ input:focus, select:focus, textarea:focus { border-color: #356bd4; box-shadow: 0
 .secondary { color: #354158; background: #edf0f4; }
 .alert { margin-top: 20px; padding: 12px 14px; border-radius: 9px; display: flex; align-items: center; gap: 8px; font-size: .86rem; }
 .error { color: #9e3434; background: #fff0f0; border: 1px solid #f1cccc; }
+.success { color: #126b46; background: #eaf8f1; border: 1px solid #bfe5d2; }
 .app-header { height: 64px; padding: 0 max(24px, calc((100vw - 1080px) / 2)); display: flex; align-items: center; gap: 20px; color: #fff; background: #172c50; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; }
 .header-title { padding-left: 20px; border-left: 1px solid #ffffff2e; color: #bdc9dc; font-size: .8rem; }

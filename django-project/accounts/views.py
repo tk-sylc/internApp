@@ -1,19 +1,16 @@
 import json
 import secrets
 import uuid
-from datetime import timedelta
 
-from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.forms import SetPasswordForm
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.encoding import force_str
@@ -22,15 +19,13 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .models import Department, EmailVerification, UserProfile
+from .models import AccountInvitation, Department, EmailVerification, UserProfile
 from .services import (
     consume_rate_limit,
-    is_company_email,
     log_email_delivery_failure,
     normalize_email,
     read_email_verification_token,
     send_password_reset_email,
-    send_verification_email,
 )
 
 
@@ -125,19 +120,6 @@ def session_payload(user=None):
     }
 
 
-def accepted_registration_response():
-    return JsonResponse(
-        {
-            "detail": (
-                "登録を受け付けました。新規登録できるメールアドレスの場合は、"
-                "確認メールが送信されます。"
-            ),
-            "email_verification_required": True,
-        },
-        status=202,
-    )
-
-
 @require_GET
 @never_cache
 @ensure_csrf_cookie
@@ -187,7 +169,7 @@ def login_view(request):
                 return JsonResponse(
                     {
                         "code": "email_verification_required",
-                        "detail": "メールアドレスの確認を完了してください。",
+                        "detail": "招待メールから初回パスワードを設定してください。",
                     },
                     status=403,
                 )
@@ -208,7 +190,7 @@ def login_view(request):
         return JsonResponse(
             {
                 "code": "email_verification_required",
-                "detail": "メールアドレスの確認を完了してください。",
+                "detail": "招待メールから初回パスワードを設定してください。",
             },
             status=403,
         )
@@ -264,100 +246,6 @@ def profile_view(request):
 @require_POST
 @csrf_protect
 @never_cache
-def register_view(request):
-    data, error_response = parse_json_object(request)
-    if error_response:
-        return error_response
-
-    if not settings.COMPANY_EMAIL_DOMAINS:
-        return JsonResponse(
-            {
-                "code": "registration_unavailable",
-                "detail": "会社メールの許可ドメインが設定されていません。",
-            },
-            status=503,
-        )
-
-    email = data.get("email")
-    password = data.get("password")
-    password_confirm = data.get("password_confirm")
-    fields = {}
-
-    if not isinstance(email, str):
-        fields["email"] = ["会社メールアドレスを入力してください。"]
-        normalized_email = ""
-    else:
-        normalized_email = normalize_email(email)
-        try:
-            validate_email(normalized_email)
-        except ValidationError:
-            fields["email"] = ["正しいメールアドレスを入力してください。"]
-        else:
-            if len(normalized_email) > 254:
-                fields["email"] = ["メールアドレスが長すぎます。"]
-            elif not is_company_email(normalized_email):
-                fields["email"] = ["許可された会社メールアドレスを使用してください。"]
-
-    if not isinstance(password, str) or not password:
-        fields["password"] = ["パスワードを入力してください。"]
-    elif len(password) > 1024:
-        fields["password"] = ["パスワードが長すぎます。"]
-
-    if password != password_confirm:
-        fields["password_confirm"] = ["確認用パスワードが一致しません。"]
-
-    limited, window = consume_rate_limit("register", request, normalized_email)
-    if limited:
-        return rate_limit_response(window)
-
-    if not fields:
-        candidate = User(username=normalized_email, email=normalized_email)
-        try:
-            validate_password(password, user=candidate)
-        except ValidationError as error:
-            fields["password"] = list(error.messages)
-
-    if fields:
-        return field_error_response(fields)
-
-    if User.objects.filter(username__iexact=normalized_email).exists() or User.objects.filter(
-        email__iexact=normalized_email
-    ).exists():
-        return accepted_registration_response()
-
-    try:
-        with transaction.atomic():
-            user = User.objects.create_user(
-                username=normalized_email,
-                email=normalized_email,
-                password=password,
-                is_active=False,
-            )
-            verification = EmailVerification.objects.create(user=user)
-    except IntegrityError:
-        return accepted_registration_response()
-
-    try:
-        send_verification_email(verification)
-    except Exception:
-        log_email_delivery_failure("verification")
-        return JsonResponse(
-            {
-                "code": "email_delivery_failed",
-                "detail": (
-                    "アカウントは作成されましたが、確認メールを送信できませんでした。"
-                    "時間をおいて再送してください。"
-                ),
-            },
-            status=503,
-        )
-
-    return accepted_registration_response()
-
-
-@require_POST
-@csrf_protect
-@never_cache
 def confirm_email_verification_view(request):
     limited, window = consume_rate_limit("email_verification", request)
     if limited:
@@ -368,8 +256,12 @@ def confirm_email_verification_view(request):
         return error_response
 
     token = data.get("token")
+    password = data.get("password")
+    password_confirm = data.get("password_confirm")
     if not isinstance(token, str) or not token:
-        return field_error_response({"token": ["確認リンクが必要です。"]})
+        return field_error_response({"token": ["招待リンクが必要です。"]})
+    if not isinstance(password, str) or not password:
+        return field_error_response({"password": ["パスワードを入力してください。"]})
 
     try:
         payload = read_email_verification_token(token)
@@ -378,7 +270,7 @@ def confirm_email_verification_view(request):
         token_version = str(payload["version"])
     except (signing.BadSignature, KeyError, TypeError, ValueError):
         return JsonResponse(
-            {"detail": "確認リンクが無効か、有効期限が切れています。"},
+            {"detail": "招待リンクが無効か、有効期限が切れています。"},
             status=400,
         )
 
@@ -401,77 +293,37 @@ def confirm_email_verification_view(request):
         )
         if not valid:
             return JsonResponse(
-                {"detail": "確認リンクが無効か、有効期限が切れています。"},
+                {"detail": "招待リンクが無効か、有効期限が切れています。"},
                 status=400,
             )
 
-        verification.user.is_active = True
-        verification.user.save(update_fields=["is_active"])
+        form = SetPasswordForm(
+            verification.user,
+            data={"new_password1": password, "new_password2": password_confirm},
+        )
+        if not form.is_valid():
+            fields = {
+                "password": [
+                    str(message) for message in form.errors.get("new_password1", [])
+                ],
+                "password_confirm": [
+                    str(message) for message in form.errors.get("new_password2", [])
+                ],
+            }
+            return field_error_response(
+                {name: messages for name, messages in fields.items() if messages}
+            )
+
+        user = form.save()
+        user.is_active = True
+        user.save(update_fields=["is_active"])
         verification.verified_at = timezone.now()
         verification.token_version = uuid.uuid4()
         verification.save(update_fields=["verified_at", "token_version", "updated_at"])
+        AccountInvitation.objects.filter(user=user).update(accepted_at=timezone.now())
 
     return JsonResponse(
-        {"detail": "メールアドレスを確認しました。ログインしてください。"}
-    )
-
-
-@require_POST
-@csrf_protect
-@never_cache
-def resend_email_verification_view(request):
-    data, error_response = parse_json_object(request)
-    if error_response:
-        return error_response
-
-    email = data.get("email")
-    if not isinstance(email, str):
-        return field_error_response(
-            {"email": ["会社メールアドレスを入力してください。"]}
-        )
-    normalized_email = normalize_email(email)
-    try:
-        validate_email(normalized_email)
-    except ValidationError:
-        return field_error_response(
-            {"email": ["正しいメールアドレスを入力してください。"]}
-        )
-
-    limited, window = consume_rate_limit("email_resend", request, normalized_email)
-    if limited:
-        return rate_limit_response(window)
-
-    verification = None
-    should_send = False
-    with transaction.atomic():
-        user = User.objects.filter(username__iexact=normalized_email).first()
-        if user is not None:
-            try:
-                verification = EmailVerification.objects.select_for_update().get(user=user)
-            except EmailVerification.DoesNotExist:
-                verification = None
-
-        if verification and verification.is_pending and not user.is_active:
-            cooldown = timedelta(seconds=settings.EMAIL_VERIFICATION_RESEND_COOLDOWN)
-            if timezone.now() - verification.sent_at >= cooldown:
-                verification.token_version = uuid.uuid4()
-                verification.sent_at = timezone.now()
-                verification.save(update_fields=["token_version", "sent_at", "updated_at"])
-                should_send = True
-
-    if should_send:
-        try:
-            send_verification_email(verification)
-        except Exception:
-            log_email_delivery_failure("verification resend")
-
-    return JsonResponse(
-        {
-            "detail": (
-                "該当する未確認アカウントがある場合、確認メールを送信しました。"
-            )
-        },
-        status=202,
+        {"detail": "パスワードを設定しました。ログインしてください。"}
     )
 
 

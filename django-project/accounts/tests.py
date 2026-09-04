@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
-from .models import Department, EmailVerification, UserProfile
+from .models import AccountInvitation, Department, EmailVerification, UserProfile
 from .services import make_email_verification_token
 
 
@@ -16,9 +16,7 @@ User = get_user_model()
 PASSWORD = "Test-password-123!"
 NO_RATE_LIMITS = {name: (0, 0) for name in (
     "login",
-    "register",
     "email_verification",
-    "email_resend",
     "password_reset",
     "password_reset_confirm",
 )}
@@ -245,96 +243,53 @@ class ProfileViewTests(TestCase):
 
 
 @override_settings(
-    AUTH_RATE_LIMITS=NO_RATE_LIMITS,
     COMPANY_EMAIL_DOMAINS=("example.com",),
     FRONTEND_BASE_URL="https://assets.example.com",
 )
-class RegistrationTests(TestCase):
-    def test_company_email_creates_inactive_user_and_sends_verification(self):
-        response = post_json(
-            self.client,
-            "accounts:register",
-            {
-                "email": "NEW.User@EXAMPLE.COM",
-                "password": PASSWORD,
-                "password_confirm": PASSWORD,
-            },
-        )
-
-        self.assertEqual(response.status_code, 202)
-        user = User.objects.get(username="new.user@example.com")
-        self.assertFalse(user.is_active)
-        self.assertTrue(user.check_password(PASSWORD))
-        self.assertFalse(hasattr(user, "profile"))
-        self.assertTrue(user.email_verification.is_pending)
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("https://assets.example.com/#/verify-email?", mail.outbox[0].body)
-        self.assertNotIn("token", response.json())
-
-    def test_external_and_lookalike_domains_are_rejected(self):
-        for email in ("user@outside.example", "user@example.com.evil.test"):
-            with self.subTest(email=email):
-                response = post_json(
-                    self.client,
-                    "accounts:register",
-                    {
-                        "email": email,
-                        "password": PASSWORD,
-                        "password_confirm": PASSWORD,
-                    },
-                )
-                self.assertEqual(response.status_code, 400)
-                self.assertIn("email", response.json()["fields"])
-
-        self.assertFalse(User.objects.exists())
-
-    def test_password_mismatch_is_rejected(self):
-        response = post_json(
-            self.client,
-            "accounts:register",
-            {
-                "email": "user@example.com",
-                "password": PASSWORD,
-                "password_confirm": "different-password",
-            },
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("password_confirm", response.json()["fields"])
-
-    def test_duplicate_email_does_not_create_another_user(self):
-        User.objects.create_user(
-            username="duplicate@example.com",
-            email="duplicate@example.com",
+class AccountInvitationAdminTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
             password=PASSWORD,
         )
+        self.client.force_login(self.admin)
 
-        response = post_json(
-            self.client,
-            "accounts:register",
+    def test_admin_invite_creates_inactive_user_and_sends_link(self):
+        response = self.client.post(
+            reverse("admin:accounts_accountinvitation_add"),
             {
-                "email": "DUPLICATE@example.com",
-                "password": PASSWORD,
-                "password_confirm": PASSWORD,
+                "email": "NEW.User@EXAMPLE.COM",
+                "display_name": "山田 太郎",
+                "department": Department.SALES,
+                "_save": "保存",
             },
         )
 
-        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(username="new.user@example.com")
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.has_usable_password())
+        self.assertEqual(user.profile.display_name, "山田 太郎")
+        self.assertTrue(user.email_verification.is_pending)
+        self.assertEqual(AccountInvitation.objects.get(user=user).email, user.email)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("https://assets.example.com/#/activate-account?", mail.outbox[0].body)
+
+    def test_admin_cannot_invite_external_domain(self):
+        response = self.client.post(
+            reverse("admin:accounts_accountinvitation_add"),
+            {
+                "email": "user@outside.example",
+                "display_name": "社外ユーザー",
+                "department": Department.SYSTEM,
+                "_save": "保存",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "許可された会社メールアドレス")
         self.assertEqual(User.objects.count(), 1)
-        self.assertEqual(len(mail.outbox), 0)
-
-    @override_settings(COMPANY_EMAIL_DOMAINS=())
-    def test_registration_is_disabled_without_company_domain(self):
-        response = post_json(
-            self.client,
-            "accounts:register",
-            {
-                "email": "user@example.com",
-                "password": PASSWORD,
-                "password_confirm": PASSWORD,
-            },
-        )
-        self.assertEqual(response.status_code, 503)
 
 
 @override_settings(
@@ -343,32 +298,42 @@ class RegistrationTests(TestCase):
 )
 class EmailVerificationTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(
+        self.user = User(
             username="verify@example.com",
             email="verify@example.com",
-            password=PASSWORD,
             is_active=False,
         )
+        self.user.set_unusable_password()
+        self.user.save()
         self.verification = EmailVerification.objects.create(user=self.user)
+        self.invitation = AccountInvitation.objects.create(
+            email=self.user.email,
+            display_name="招待利用者",
+            department=Department.SYSTEM,
+            user=self.user,
+        )
 
-    def test_valid_token_activates_user_once(self):
+    def test_valid_token_sets_password_and_activates_user_once(self):
         token = make_email_verification_token(self.verification)
         response = post_json(
             self.client,
             "accounts:email-verification-confirm",
-            {"token": token},
+            {"token": token, "password": PASSWORD, "password_confirm": PASSWORD},
         )
 
         self.assertEqual(response.status_code, 200)
         self.user.refresh_from_db()
         self.verification.refresh_from_db()
+        self.invitation.refresh_from_db()
         self.assertTrue(self.user.is_active)
+        self.assertTrue(self.user.check_password(PASSWORD))
         self.assertIsNotNone(self.verification.verified_at)
+        self.assertIsNotNone(self.invitation.accepted_at)
 
         reused = post_json(
             self.client,
             "accounts:email-verification-confirm",
-            {"token": token},
+            {"token": token, "password": PASSWORD, "password_confirm": PASSWORD},
         )
         self.assertEqual(reused.status_code, 400)
 
@@ -377,37 +342,27 @@ class EmailVerificationTests(TestCase):
         response = post_json(
             self.client,
             "accounts:email-verification-confirm",
-            {"token": f"{token}tampered"},
+            {"token": f"{token}tampered", "password": PASSWORD, "password_confirm": PASSWORD},
         )
         self.assertEqual(response.status_code, 400)
         self.user.refresh_from_db()
         self.assertFalse(self.user.is_active)
 
-    def test_resend_rotates_token_and_invalidates_old_link(self):
-        old_token = make_email_verification_token(self.verification)
+    def test_password_mismatch_does_not_consume_invitation(self):
+        token = make_email_verification_token(self.verification)
         response = post_json(
-            self.client,
-            "accounts:email-verification-resend",
-            {"email": self.user.email},
-        )
-
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(len(mail.outbox), 1)
-        invalid = post_json(
             self.client,
             "accounts:email-verification-confirm",
-            {"token": old_token},
+            {"token": token, "password": PASSWORD, "password_confirm": "different"},
         )
-        self.assertEqual(invalid.status_code, 400)
 
-    def test_resend_does_not_reveal_unknown_account(self):
-        response = post_json(
+        self.assertEqual(response.status_code, 400)
+        retry = post_json(
             self.client,
-            "accounts:email-verification-resend",
-            {"email": "unknown@example.com"},
+            "accounts:email-verification-confirm",
+            {"token": token, "password": PASSWORD, "password_confirm": PASSWORD},
         )
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(retry.status_code, 200)
 
 
 @override_settings(
@@ -500,9 +455,7 @@ class CSRFProtectionTests(TestCase):
             ("accounts:login", "post", {"username": "csrf-user", "password": PASSWORD}),
             ("accounts:logout", "post", None),
             ("accounts:profile", "put", {"display_name": "山田", "department": "sales"}),
-            ("accounts:register", "post", {"email": "user@example.com"}),
             ("accounts:email-verification-confirm", "post", {"token": "invalid"}),
-            ("accounts:email-verification-resend", "post", {"email": "user@example.com"}),
             ("accounts:password-reset", "post", {"email": "user@example.com"}),
             ("accounts:password-reset-confirm", "post", {"uid": "x", "token": "x"}),
         ]

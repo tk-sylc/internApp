@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle2, FileSpreadsheet, HandCoins,
-  LoaderCircle, LogIn, LogOut, PackageOpen, RotateCcw, Search, Trash2, X,
+  KeyRound, LoaderCircle, LogIn, LogOut, Mail, PackageOpen, RotateCcw,
+  Search, Trash2, X,
 } from 'lucide-react'
 import './App.css'
 
@@ -49,7 +50,8 @@ async function readJson(response) {
 
 function errorText(body, fallback) {
   if (typeof body.detail === 'string') return body.detail
-  return Object.values(body).flat().find((item) => typeof item === 'string') ?? fallback
+  const fieldMessage = Object.values(body.fields ?? {}).flat().find((item) => typeof item === 'string')
+  return fieldMessage ?? Object.values(body).flat().find((item) => typeof item === 'string') ?? fallback
 }
 
 function formatDate(value) {
@@ -58,8 +60,12 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(date)
 }
 
-function Login({ onLogin }) {
-  const [username, setUsername] = useState('')
+function AuthCard({ icon: Icon = KeyRound, title, description, children }) {
+  return <main className="simple-login"><section className="simple-login__card"><div className="login-logo"><FileSpreadsheet /><span>internApp</span></div><div className="auth-heading"><Icon /><div><h1>{title}</h1><p>{description}</p></div></div>{children}</section></main>
+}
+
+function Login({ onLogin, onForgotPassword }) {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -72,7 +78,7 @@ function Login({ onLogin }) {
       const response = await fetch('/api/auth/login/', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: email, password }),
       })
       const body = await readJson(response)
       if (!response.ok) throw new Error(errorText(body, 'ログインできませんでした。'))
@@ -85,17 +91,86 @@ function Login({ onLogin }) {
   }
 
   return (
-    <main className="simple-login">
-      <form className="simple-login__card" onSubmit={submit}>
-        <div className="login-logo"><FileSpreadsheet /><span>internApp</span></div>
-        <div><h1>ログイン</h1><p>資産台帳の登録・更新</p></div>
+    <AuthCard icon={LogIn} title="ログイン" description="資産台帳の登録・更新">
+      <form className="auth-form" onSubmit={submit}>
         {error && <div className="alert error">{error}</div>}
-        <label>メールアドレスまたはログイン名<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required autoFocus /></label>
+        <label>会社メールアドレス<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required autoFocus /></label>
         <label>パスワード<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>
         <button className="button primary" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <LogIn />}ログイン</button>
+        <button type="button" className="auth-link" onClick={onForgotPassword}>パスワードを忘れた方</button>
       </form>
-    </main>
+      <p className="auth-note">アカウントは管理者が発行します。初回は届いた招待メールからパスワードを設定してください。</p>
+    </AuthCard>
   )
+}
+
+function ForgotPassword({ onBack }) {
+  const [email, setEmail] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (event) => {
+    event.preventDefault(); setBusy(true); setError(''); setMessage('')
+    try {
+      const response = await fetch('/api/auth/password-reset/', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+        body: JSON.stringify({ email }),
+      })
+      const body = await readJson(response)
+      if (!response.ok) throw new Error(errorText(body, '再設定メールを送信できませんでした。'))
+      setMessage(body.detail)
+    } catch (requestError) { setError(requestError.message || 'サーバーへ接続できませんでした。') }
+    finally { setBusy(false) }
+  }
+
+  return <AuthCard icon={Mail} title="パスワード再設定" description="登録済みの会社メールへ再設定リンクを送ります">
+    <form className="auth-form" onSubmit={submit}>
+      {message && <div className="alert success"><CheckCircle2 />{message}</div>}
+      {error && <div className="alert error"><X />{error}</div>}
+      <label>会社メールアドレス<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required autoFocus /></label>
+      <button className="button primary" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <Mail />}再設定メールを送る</button>
+      <button type="button" className="auth-link" onClick={onBack}>ログインへ戻る</button>
+    </form>
+  </AuthCard>
+}
+
+function SetNewPassword({ mode, token, uid, onComplete }) {
+  const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const isInvitation = mode === 'invitation'
+
+  const submit = async (event) => {
+    event.preventDefault(); setBusy(true); setError('')
+    try {
+      const endpoint = isInvitation ? '/api/auth/email-verification/confirm/' : '/api/auth/password-reset/confirm/'
+      const payload = isInvitation ? { token, password, password_confirm: passwordConfirm } : { uid, token, password, password_confirm: passwordConfirm }
+      const response = await fetch(endpoint, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+        body: JSON.stringify(payload),
+      })
+      const body = await readJson(response)
+      if (!response.ok) throw new Error(errorText(body, 'パスワードを設定できませんでした。'))
+      setMessage(body.detail)
+    } catch (requestError) { setError(requestError.message || 'サーバーへ接続できませんでした。') }
+    finally { setBusy(false) }
+  }
+
+  return <AuthCard title={isInvitation ? '初回パスワード設定' : '新しいパスワード'} description={isInvitation ? '本人専用のパスワードを設定してください' : '今後使用するパスワードを入力してください'}>
+    {message ? <><div className="alert success"><CheckCircle2 />{message}</div><button className="button primary" onClick={onComplete}><LogIn />ログインへ</button></> : <form className="auth-form" onSubmit={submit}>
+      {error && <div className="alert error"><X />{error}</div>}
+      {!token && <div className="alert error"><X />リンクが正しくありません。管理者へ連絡してください。</div>}
+      <label>新しいパスワード<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" required autoFocus /></label>
+      <label>新しいパスワード（確認）<input type="password" value={passwordConfirm} onChange={(event) => setPasswordConfirm(event.target.value)} autoComplete="new-password" required /></label>
+      <p className="password-hint">8文字以上で、推測されにくいパスワードを設定してください。</p>
+      <button className="button primary" disabled={busy || !token}>{busy ? <LoaderCircle className="spin" /> : <KeyRound />}パスワードを設定</button>
+    </form>}
+  </AuthCard>
 }
 
 function Header({ user, onLogout }) {
@@ -197,6 +272,7 @@ function Complete({ result, onDone }) {
 
 export default function App() {
   const [session, setSession] = useState(null)
+  const [authRoute, setAuthRoute] = useState(() => window.location.hash)
   const [screen, setScreen] = useState('dashboard')
   const [operation, setOperation] = useState(null)
   const [records, setRecords] = useState([])
@@ -212,10 +288,24 @@ export default function App() {
     }).catch(() => { setSession({ authenticated: false }); setLoading(false) })
   }, [])
 
+  useEffect(() => {
+    const updateRoute = () => setAuthRoute(window.location.hash)
+    window.addEventListener('hashchange', updateRoute)
+    return () => window.removeEventListener('hashchange', updateRoute)
+  }, [])
+
   const logout = async () => { await fetch('/api/auth/logout/', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': csrfToken() } }).catch(() => null); setSession({ authenticated: false }) }
   const start = (key) => { setOperation(key); setScreen('register') }
+  const goToAuth = (path = '') => { window.location.hash = path; setAuthRoute(window.location.hash) }
   if (!session) return <div className="boot"><LoaderCircle className="spin" />読み込み中</div>
-  if (!session.authenticated) return <Login onLogin={(body) => { setSession(body); loadRecords() }} />
+  if (!session.authenticated) {
+    const [path, query = ''] = authRoute.replace(/^#/, '').split('?')
+    const params = new URLSearchParams(query)
+    if (path === '/activate-account') return <SetNewPassword mode="invitation" token={params.get('token')} onComplete={() => goToAuth()} />
+    if (path === '/reset-password') return <SetNewPassword mode="reset" uid={params.get('uid')} token={params.get('token')} onComplete={() => goToAuth()} />
+    if (path === '/forgot-password') return <ForgotPassword onBack={() => goToAuth()} />
+    return <Login onForgotPassword={() => goToAuth('/forgot-password')} onLogin={(body) => { goToAuth(); setSession(body); loadRecords() }} />
+  }
 
   return <div className="app-shell"><Header user={session.user} onLogout={logout} />{screen === 'register' ? <RegisterFlow operationKey={operation} onCancel={() => setScreen('dashboard')} onComplete={(body) => { setResult(body); setScreen('complete') }} /> : screen === 'complete' ? <Complete result={result} onDone={() => { setScreen('dashboard'); loadRecords() }} /> : <Dashboard records={records} loading={loading} onNew={start} />}</div>
 }
