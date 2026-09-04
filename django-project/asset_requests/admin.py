@@ -76,7 +76,6 @@ class BaseAssetRequestAdmin(admin.ModelAdmin):
         return queryset | reference_match, use_distinct
 
 
-@admin.register(PCRequest)
 class PCRequestAdmin(BaseAssetRequestAdmin):
     list_display = BaseAssetRequestAdmin.list_display + (
         "management_number",
@@ -89,7 +88,6 @@ class PCRequestAdmin(BaseAssetRequestAdmin):
     list_filter = BaseAssetRequestAdmin.list_filter + ("start_date",)
 
 
-@admin.register(SmartphoneRequest)
 class SmartphoneRequestAdmin(BaseAssetRequestAdmin):
     list_display = BaseAssetRequestAdmin.list_display + (
         "os",
@@ -107,7 +105,6 @@ class SmartphoneRequestAdmin(BaseAssetRequestAdmin):
     search_fields = BaseAssetRequestAdmin.search_fields + ("model_name",)
 
 
-@admin.register(ExternalStorageRequest)
 class ExternalStorageRequestAdmin(BaseAssetRequestAdmin):
     list_display = BaseAssetRequestAdmin.list_display + (
         "device_name",
@@ -121,7 +118,6 @@ class ExternalStorageRequestAdmin(BaseAssetRequestAdmin):
     list_filter = BaseAssetRequestAdmin.list_filter + ("loan_date",)
 
 
-@admin.register(LANRequest)
 class LANRequestAdmin(BaseAssetRequestAdmin):
     list_display = BaseAssetRequestAdmin.list_display + (
         "device_type",

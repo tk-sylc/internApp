@@ -185,7 +185,7 @@ class ApprovedApplication(models.Model):
         RETURN = "return", "返却"
 
     application_type = models.CharField(
-        "申請種別",
+        "機器種別",
         max_length=20,
         choices=ApplicationType.choices,
         db_index=True,
@@ -223,8 +223,8 @@ class ApprovedApplication(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        verbose_name = "承認済み申請"
-        verbose_name_plural = "承認済み申請"
+        verbose_name = "資産台帳登録"
+        verbose_name_plural = "資産台帳登録"
 
     @property
     def reference_number(self):

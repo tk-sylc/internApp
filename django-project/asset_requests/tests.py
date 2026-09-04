@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -88,13 +89,15 @@ class ReferenceNumberAdminTests(APITestCase):
         self.assertQuerySetEqual(queryset, [pc_request])
         self.assertFalse(use_distinct)
 
-    def test_status_can_be_edited_from_admin_list(self):
-        model_admin = PCRequestAdmin(PCRequest, AdminSite())
+    def test_only_current_ledger_model_is_visible_in_admin(self):
+        self.assertIn(ApprovedApplication, admin.site._registry)
+        self.assertNotIn(PCRequest, admin.site._registry)
+        self.assertNotIn(SmartphoneRequest, admin.site._registry)
+        self.assertNotIn(ExternalStorageRequest, admin.site._registry)
+        self.assertNotIn(LANRequest, admin.site._registry)
 
-        self.assertIn("status", model_admin.list_editable)
 
-
-class RequestStatusModelTests(APITestCase):
+class LegacyRequestStatusModelTests(APITestCase):
     def test_status_update_is_persisted(self):
         user = get_user_model().objects.create_user(
             username="status-user",
