@@ -175,6 +175,105 @@
   margin-top: 4px;
 }
 
+.auth-switches {
+  margin-top: 22px;
+  padding-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.auth-switches button,
+.auth-back-button {
+  padding: 3px;
+  color: var(--teal-700);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.auth-switches button:hover,
+.auth-back-button:hover {
+  color: var(--navy-900);
+  text-decoration: underline;
+}
+
+.auth-back-button {
+  width: 100%;
+  margin-top: 18px;
+  text-align: center;
+}
+
+.auth-back-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.auth-notice {
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #1d625a;
+  background: #effaf7;
+  border: 1px solid #bfe5db;
+  border-radius: 11px;
+}
+
+.auth-notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.auth-notice p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.auth-select {
+  width: 100%;
+  height: 46px;
+  padding: 0 12px;
+  color: var(--ink-800);
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  outline: none;
+}
+
+.auth-select:focus {
+  border-color: var(--teal-600);
+  box-shadow: 0 0 0 3px rgba(13, 128, 121, 0.1);
+}
+
+.profile-email {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: #f4f8f8;
+  border-radius: 10px;
+}
+
+.profile-email span {
+  color: var(--ink-400);
+  font-size: 11px;
+}
+
+.profile-email strong {
+  color: var(--ink-700);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .login-note {
   margin-top: 25px;
   padding-top: 18px;
@@ -878,6 +977,36 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
+}
+
+.applicant-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.applicant-summary > div {
+  min-width: 0;
+  padding: 13px 15px;
+  background: #f5f9f8;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.applicant-summary dt {
+  margin-bottom: 4px;
+  color: var(--ink-400);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.applicant-summary dd {
+  margin: 0;
+  color: var(--ink-800);
+  font-size: 14px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
 }
 
 .form-grid {
@@ -1741,6 +1870,7 @@
   }
 
   .applicant-grid,
+  .applicant-summary,
   .form-grid,
   .form-sidebar {
     grid-template-columns: 1fr;

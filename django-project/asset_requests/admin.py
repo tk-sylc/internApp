@@ -12,7 +12,7 @@ class BaseAssetRequestAdmin(admin.ModelAdmin):
         "created_by",
         "requester_name",
         "department",
-        "employee_number",
+        "requester_email",
         "status",
         "created_at",
     )
@@ -22,7 +22,7 @@ class BaseAssetRequestAdmin(admin.ModelAdmin):
         "created_by__username",
         "requester_name",
         "department",
-        "employee_number",
+        "requester_email",
     )
     readonly_fields = ("reference_number", "created_by", "created_at", "updated_at")
     ordering = ("-created_at",)

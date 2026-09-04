@@ -7,6 +7,8 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
+from accounts.models import Department, UserProfile
+
 from .admin import PCRequestAdmin
 from .models import (
     ExternalStorageRequest,
@@ -34,7 +36,13 @@ class AuthenticatedAssetRequestAPITestCase(APITestCase):
         super().setUp()
         self.user = get_user_model().objects.create_user(
             username="asset-request-user",
+            email="asset-request@example.com",
             password="Test-password-123!",
+        )
+        self.profile = UserProfile.objects.create(
+            user=self.user,
+            display_name="プロフィール 太郎",
+            department=Department.SYSTEM,
         )
         self.client.force_login(self.user)
 
@@ -49,7 +57,7 @@ class ReferenceNumberAdminTests(APITestCase):
             created_by=user,
             requester_name="管理画面テスト",
             department="情報システム部",
-            employee_number="ADMIN-001",
+            requester_email="admin-search@example.com",
             applicant_name="管理画面テスト",
             management_number="PC-ADMIN-001",
             start_date=timezone.localdate(),
@@ -83,7 +91,7 @@ class RequestStatusModelTests(APITestCase):
             created_by=user,
             requester_name="状態更新テスト",
             department="情報システム部",
-            employee_number="STATUS-001",
+            requester_email="status@example.com",
             applicant_name="状態更新テスト",
             management_number="PC-STATUS-001",
             start_date=timezone.localdate(),
@@ -105,9 +113,6 @@ class PCRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
 
     def get_payload(self):
         return {
-            "requester_name": "テスト太郎",
-            "department": "開発部",
-            "employee_number": "TEST-001",
             "applicant_name": "テスト太郎",
             "management_number": "PC-TEST-001",
             "start_date": relative_date(1),
@@ -127,6 +132,9 @@ class PCRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
 
         pc_request = PCRequest.objects.get()
         self.assertEqual(pc_request.created_by, self.user)
+        self.assertEqual(pc_request.requester_name, self.profile.display_name)
+        self.assertEqual(pc_request.department, "システム部")
+        self.assertEqual(pc_request.requester_email, self.user.email)
         self.assertEqual(pc_request.purpose, "API自動テスト")
         self.assertEqual(pc_request.status, "pending")
         self.assertEqual(
@@ -169,6 +177,22 @@ class PCRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(PCRequest.objects.get().created_by, self.user)
 
+    def test_requester_snapshot_cannot_be_spoofed_by_client(self):
+        payload = self.get_payload()
+        payload.update({
+            "requester_name": "別人",
+            "department": "不正な部署",
+            "requester_email": "attacker@example.com",
+        })
+
+        response = self.client.post(reverse(self.url_name), payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        pc_request = PCRequest.objects.get()
+        self.assertEqual(pc_request.requester_name, self.profile.display_name)
+        self.assertEqual(pc_request.department, "システム部")
+        self.assertEqual(pc_request.requester_email, self.user.email)
+
     def test_pc_request_rejects_past_start_date(self):
         payload = self.get_payload()
         payload["start_date"] = relative_date(-1)
@@ -185,9 +209,6 @@ class ExternalStorageRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase)
 
     def get_payload(self):
         return {
-            "requester_name": "テスト花子",
-            "department": "総務部",
-            "employee_number": "TEST-002",
             "applicant_name": "テスト花子",
             "device_name": "暗号化USBメモリ",
             "capacity": "64GB",
@@ -242,9 +263,6 @@ class LANRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
 
     def get_payload(self):
         return {
-            "requester_name": "テスト次郎",
-            "department": "情報システム部",
-            "employee_number": "TEST-003",
             "device_type": LANRequest.DeviceType.USB_LAN_ADAPTER,
             "device_name": "USB-C LANアダプター",
             "quantity": 2,
@@ -325,9 +343,6 @@ class SmartphoneRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
 
     def get_payload(self):
         return {
-            "requester_name": "テスト三郎",
-            "department": "営業部",
-            "employee_number": "TEST-004",
             "os": SmartphoneRequest.OS.IOS,
             "line_type": SmartphoneRequest.LineType.NEW_CONTRACT,
             "model_name": "iPhoneテストモデル",
@@ -465,6 +480,32 @@ class AssetRequestAuthenticationTests(APITestCase):
         self.assertFalse(SmartphoneRequest.objects.exists())
 
 
+class AssetRequestProfileTests(APITestCase):
+    def test_authenticated_user_must_complete_profile_before_requesting(self):
+        user = get_user_model().objects.create_user(
+            username="no-profile-user",
+            email="no-profile@example.com",
+            password="Test-password-123!",
+        )
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("asset_requests:pc-request-create"),
+            {
+                "applicant_name": "プロフィール未登録",
+                "management_number": "PC-NO-PROFILE",
+                "start_date": relative_date(1),
+                "location": "東京本社",
+                "purpose": "プロフィール必須テスト",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("profile", response.data)
+        self.assertFalse(PCRequest.objects.exists())
+
+
 class AssetRequestCSRFProtectionTests(APITestCase):
     url_name = "asset_requests:pc-request-create"
     password = "Test-password-123!"
@@ -473,16 +514,19 @@ class AssetRequestCSRFProtectionTests(APITestCase):
         super().setUp()
         self.user = get_user_model().objects.create_user(
             username="asset-csrf-user",
+            email="asset-csrf@example.com",
             password=self.password,
+        )
+        UserProfile.objects.create(
+            user=self.user,
+            display_name="CSRFテスト太郎",
+            department=Department.SALES,
         )
         self.csrf_client = APIClient(enforce_csrf_checks=True)
         self.csrf_client.force_login(self.user)
 
     def get_payload(self):
         return {
-            "requester_name": "CSRFテスト太郎",
-            "department": "開発部",
-            "employee_number": "CSRF-001",
             "applicant_name": "CSRFテスト太郎",
             "management_number": "PC-CSRF-001",
             "start_date": relative_date(1),

@@ -37,6 +37,51 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 
+# Account registration and recovery
+#
+# Registration is deliberately disabled when no company domain is configured.
+# Example (PowerShell):
+#   $env:COMPANY_EMAIL_DOMAINS = "example.co.jp"
+COMPANY_EMAIL_DOMAINS = tuple(
+    domain.strip().casefold()
+    for domain in os.environ.get('COMPANY_EMAIL_DOMAINS', '').split(',')
+    if domain.strip()
+)
+FRONTEND_BASE_URL = os.environ.get(
+    'FRONTEND_BASE_URL',
+    'http://127.0.0.1:5173',
+).rstrip('/')
+EMAIL_VERIFICATION_TIMEOUT = int(
+    os.environ.get('EMAIL_VERIFICATION_TIMEOUT', '86400')
+)
+EMAIL_VERIFICATION_RESEND_COOLDOWN = int(
+    os.environ.get('EMAIL_VERIFICATION_RESEND_COOLDOWN', '60')
+)
+PASSWORD_RESET_TIMEOUT = int(os.environ.get('PASSWORD_RESET_TIMEOUT', '3600'))
+DEFAULT_FROM_EMAIL = os.environ.get(
+    'DEFAULT_FROM_EMAIL',
+    'Asset Desk <no-reply@example.invalid>',
+)
+
+# The application-level limits protect the development and single-process setup.
+# Use a shared cache and an infrastructure-level limiter in a multi-process deployment.
+AUTH_RATE_LIMITS = {
+    'login': (10, 300),
+    'register': (5, 3600),
+    'email_verification': (20, 900),
+    'email_resend': (3, 3600),
+    'password_reset': (3, 3600),
+    'password_reset_confirm': (10, 3600),
+}
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'asset-desk-auth-rate-limits',
+    },
+}
+
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -141,8 +186,23 @@ STATIC_URL = 'static/'
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
+MAILER_BACKEND = os.environ.get(
+    'DJANGO_MAILER_BACKEND',
+    'django.core.mail.backends.console.EmailBackend',
+)
 MAILERS = {
     'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        'BACKEND': MAILER_BACKEND,
     },
 }
+
+if MAILER_BACKEND == 'django.core.mail.backends.smtp.EmailBackend':
+    MAILERS['default']['OPTIONS'] = {
+        'host': os.environ['SMTP_HOST'],
+        'port': int(os.environ.get('SMTP_PORT', '587')),
+        'username': os.environ.get('SMTP_USERNAME', ''),
+        'password': os.environ.get('SMTP_PASSWORD', ''),
+        'use_tls': os.environ.get('SMTP_USE_TLS', 'true').casefold() == 'true',
+        'use_ssl': os.environ.get('SMTP_USE_SSL', 'false').casefold() == 'true',
+        'timeout': int(os.environ.get('SMTP_TIMEOUT', '10')),
+    }

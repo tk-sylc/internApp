@@ -14,13 +14,16 @@ import {
   LoaderCircle,
   LogIn,
   LogOut,
+  Mail,
   Network,
   PackageCheck,
+  RefreshCw,
   ShieldCheck,
   Smartphone,
   Trash2,
   Usb,
   UserRound,
+  UserPlus,
 } from 'lucide-react'
 import './App.css'
 
@@ -246,37 +249,6 @@ const REQUEST_TYPES = {
   },
 }
 
-const APPLICANT_FIELDS = [
-  {
-    name: 'requesterName',
-    label: '申請者氏名',
-    type: 'text',
-    placeholder: '例：山田 太郎',
-    hint: 'この申請を行う方の氏名',
-    required: true,
-  },
-  {
-    name: 'department',
-    label: '所属部署',
-    type: 'text',
-    placeholder: '例：営業部',
-    required: true,
-  },
-  {
-    name: 'employeeNumber',
-    label: '社員番号',
-    type: 'text',
-    placeholder: '例：EMP-0124',
-    required: true,
-  },
-]
-
-const COMMON_API_FIELDS = {
-  requesterName: 'requester_name',
-  department: 'department',
-  employeeNumber: 'employee_number',
-}
-
 const REQUEST_API_CONFIG = {
   pc: {
     endpoint: '/api/pc-requests/',
@@ -329,9 +301,6 @@ const REQUEST_API_CONFIG = {
 }
 
 const API_FIELD_LABELS = {
-  requester_name: '申請者氏名',
-  department: '所属部署',
-  employee_number: '社員番号',
   applicant_name: '利用者氏名',
   management_number: '管理番号',
   start_date: '利用開始希望日',
@@ -354,9 +323,6 @@ const API_FIELD_LABELS = {
 }
 
 const FIELD_MAX_LENGTHS = {
-  requesterName: 100,
-  department: 100,
-  employeeNumber: 50,
   applicantName: 100,
   managementNumber: 50,
   location: 200,
@@ -365,8 +331,40 @@ const FIELD_MAX_LENGTHS = {
   model: 100,
 }
 
-const DRAFT_STORAGE_KEY_PREFIX = 'asset-desk-request-draft-v2'
+const DEPARTMENT_OPTIONS = [
+  { value: 'sales', label: '営業部' },
+  { value: 'general_affairs', label: '総務部' },
+  { value: 'system', label: 'システム部' },
+]
+
+const DRAFT_STORAGE_KEY_PREFIX = 'asset-desk-request-draft-v3'
 const REQUEST_TIMEOUT_MS = 15_000
+
+function readAuthScreenFromHash() {
+  const [path, query = ''] = window.location.hash.split('?')
+  const params = new URLSearchParams(query)
+
+  if (path === '#/verify-email' && params.get('token')) {
+    return {
+      name: 'verify-email',
+      token: params.get('token'),
+    }
+  }
+
+  if (path === '#/reset-password' && params.get('uid') && params.get('token')) {
+    return {
+      name: 'reset-password',
+      uid: params.get('uid'),
+      token: params.get('token'),
+    }
+  }
+
+  return null
+}
+
+function clearAuthHash() {
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+}
 
 function readCookie(name) {
   const cookiePrefix = `${name}=`
@@ -410,8 +408,45 @@ async function readJsonResponse(response) {
   }
 }
 
+async function sendJsonWithCsrf(endpoint, { method = 'POST', data, signal } = {}) {
+  const csrfToken = await getCsrfToken(signal)
+  const headers = {
+    'X-CSRFToken': csrfToken,
+  }
+
+  if (data !== undefined) {
+    headers['Content-Type'] = 'application/json'
+  }
+
+  return fetch(endpoint, {
+    method,
+    headers,
+    credentials: 'same-origin',
+    body: data === undefined ? undefined : JSON.stringify(data),
+    signal,
+  })
+}
+
+function formatAuthError(result, statusCode, fallbackMessage) {
+  if (result?.fields && typeof result.fields === 'object') {
+    const messages = Object.values(result.fields)
+      .flatMap((message) => (Array.isArray(message) ? message : [message]))
+      .map(String)
+
+    if (messages.length > 0) {
+      return messages.join(' ')
+    }
+  }
+
+  if (typeof result?.detail === 'string') {
+    return result.detail
+  }
+
+  return `${fallbackMessage}（HTTP ${statusCode}）`
+}
+
 function getRequestFields(request) {
-  return [...APPLICANT_FIELDS, ...request.fields]
+  return request.fields
 }
 
 function getTodayString() {
@@ -611,7 +646,7 @@ function normalizeFormValue(fieldName, value) {
 
 function buildRequestPayload(requestKey, formValues) {
   const config = REQUEST_API_CONFIG[requestKey]
-  const fields = { ...COMMON_API_FIELDS, ...config.fields }
+  const fields = config.fields
 
   return Object.fromEntries(
     Object.entries(fields).map(([formField, apiField]) => [
@@ -624,10 +659,7 @@ function buildRequestPayload(requestKey, formValues) {
 function formatApiErrors(errorBody, statusCode, requestKey) {
   const fieldErrors = {}
   const formErrors = []
-  const apiFields = {
-    ...COMMON_API_FIELDS,
-    ...(REQUEST_API_CONFIG[requestKey]?.fields ?? {}),
-  }
+  const apiFields = REQUEST_API_CONFIG[requestKey]?.fields ?? {}
   const apiToFormField = Object.fromEntries(
     Object.entries(apiFields).map(([formField, apiField]) => [apiField, formField]),
   )
@@ -774,10 +806,10 @@ function SessionLoading() {
   )
 }
 
-function Login({ onLogin, error, isSubmitting }) {
+function AuthCard({ kicker, title, description, children }) {
   return (
     <main id="main-content" className="login-page">
-      <section className="login-card" aria-labelledby="login-title">
+      <section className="login-card" aria-labelledby="auth-title">
         <div className="login-brand">
           <span className="brand-mark" aria-hidden="true">
             <PackageCheck size={25} strokeWidth={2.2} />
@@ -789,78 +821,261 @@ function Login({ onLogin, error, isSubmitting }) {
         </div>
 
         <div className="login-heading">
-          <span className="section-kicker">WELCOME BACK</span>
-          <h1 id="login-title">ログイン</h1>
-          <p>ログイン名とパスワードを入力してください。</p>
+          <span className="section-kicker">{kicker}</span>
+          <h1 id="auth-title">{title}</h1>
+          <p>{description}</p>
         </div>
 
-        <form className="login-form" onSubmit={onLogin} aria-busy={isSubmitting}>
-          {error && (
-            <div id="login-error" className="form-alert login-alert" role="alert">
-              <CircleAlert size={20} aria-hidden="true" />
-              <div>
-                <strong>ログインできませんでした</strong>
-                <p>{error}</p>
-              </div>
-            </div>
-          )}
-
-          <div className="login-field">
-            <label htmlFor="login-name">ログイン名</label>
-            <div className="login-input">
-              <UserRound size={18} aria-hidden="true" />
-              <input
-                id="login-name"
-                name="loginName"
-                type="text"
-                autoComplete="username"
-                placeholder="ログイン名を入力"
-                required
-                autoFocus
-                disabled={isSubmitting}
-                aria-describedby={error ? 'login-error' : undefined}
-              />
-            </div>
-          </div>
-
-          <div className="login-field">
-            <label htmlFor="login-password">パスワード</label>
-            <div className="login-input">
-              <KeyRound size={18} aria-hidden="true" />
-              <input
-                id="login-password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="パスワードを入力"
-                required
-                disabled={isSubmitting}
-                aria-describedby={error ? 'login-error' : undefined}
-              />
-            </div>
-          </div>
-
-          <button className="primary-button login-button" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? (
-              <>
-                確認しています
-                <LoaderCircle className="button-spinner" size={18} aria-hidden="true" />
-              </>
-            ) : (
-              <>
-                ログイン
-                <LogIn size={18} aria-hidden="true" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="login-note">
-          <Info size={18} aria-hidden="true" />
-          <p>Djangoに登録されているログイン名とパスワードを使用してください。</p>
-        </div>
+        {children}
       </section>
     </main>
+  )
+}
+
+function AuthFeedback({ error, notice, errorTitle = '操作を完了できませんでした' }) {
+  return (
+    <>
+      {error && (
+        <div id="auth-error" className="form-alert login-alert" role="alert">
+          <CircleAlert size={20} aria-hidden="true" />
+          <div>
+            <strong>{errorTitle}</strong>
+            <p>{error}</p>
+          </div>
+        </div>
+      )}
+      {notice && (
+        <div className="auth-notice" role="status">
+          <CircleCheck size={20} aria-hidden="true" />
+          <p>{notice}</p>
+        </div>
+      )}
+    </>
+  )
+}
+
+function Login({
+  onLogin,
+  onShowRegister,
+  onShowReset,
+  onShowResend,
+  error,
+  notice,
+  isSubmitting,
+}) {
+  return (
+    <AuthCard
+      kicker="WELCOME BACK"
+      title="ログイン"
+      description="会社メールアドレスまたはログイン名とパスワードを入力してください。"
+    >
+
+      <form className="login-form" onSubmit={onLogin} aria-busy={isSubmitting}>
+        <AuthFeedback error={error} notice={notice} errorTitle="ログインできませんでした" />
+
+        <div className="login-field">
+          <label htmlFor="login-name">会社メールアドレス / ログイン名</label>
+          <div className="login-input">
+            <UserRound size={18} aria-hidden="true" />
+            <input
+              id="login-name"
+              name="loginName"
+              type="text"
+              autoComplete="username"
+              placeholder="name@example.co.jp"
+              required
+              autoFocus
+              disabled={isSubmitting}
+              aria-describedby={error ? 'auth-error' : undefined}
+            />
+          </div>
+        </div>
+
+        <div className="login-field">
+          <label htmlFor="login-password">パスワード</label>
+          <div className="login-input">
+            <KeyRound size={18} aria-hidden="true" />
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="パスワードを入力"
+              required
+              disabled={isSubmitting}
+              aria-describedby={error ? 'auth-error' : undefined}
+            />
+          </div>
+        </div>
+
+        <button className="primary-button login-button" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? '確認しています' : 'ログイン'}
+          {isSubmitting
+            ? <LoaderCircle className="button-spinner" size={18} aria-hidden="true" />
+            : <LogIn size={18} aria-hidden="true" />}
+        </button>
+      </form>
+
+      <div className="auth-switches">
+        <button type="button" onClick={onShowRegister}>アカウントを作成</button>
+        <button type="button" onClick={onShowReset}>パスワードを忘れた方</button>
+        <button type="button" onClick={onShowResend}>確認メールを再送</button>
+      </div>
+    </AuthCard>
+  )
+}
+
+function Register({ onSubmit, onBack, error, isSubmitting }) {
+  return (
+    <AuthCard
+      kicker="CREATE ACCOUNT"
+      title="アカウント作成"
+      description="会社メールアドレスの確認後、ログインできるようになります。"
+    >
+      <form className="login-form" onSubmit={onSubmit} aria-busy={isSubmitting}>
+        <AuthFeedback error={error} />
+        <AuthInput id="register-email" name="email" label="会社メールアドレス" type="email" autoComplete="email" icon={Mail} disabled={isSubmitting} />
+        <AuthInput id="register-password" name="password" label="パスワード" type="password" autoComplete="new-password" icon={KeyRound} disabled={isSubmitting} />
+        <AuthInput id="register-password-confirm" name="passwordConfirm" label="確認用パスワード" type="password" autoComplete="new-password" icon={KeyRound} disabled={isSubmitting} />
+        <button className="primary-button login-button" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? '登録しています' : 'アカウントを作成'}
+          {isSubmitting ? <LoaderCircle className="button-spinner" size={18} /> : <UserPlus size={18} />}
+        </button>
+      </form>
+      <button className="auth-back-button" type="button" onClick={onBack}>ログインへ戻る</button>
+    </AuthCard>
+  )
+}
+
+function AuthInput({ id, name, label, type, autoComplete, icon: Icon, disabled, defaultValue = '' }) {
+  return (
+    <div className="login-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="login-input">
+        <Icon size={18} aria-hidden="true" />
+        <input
+          id={id}
+          name={name}
+          type={type}
+          autoComplete={autoComplete}
+          defaultValue={defaultValue}
+          required
+          disabled={disabled}
+        />
+      </div>
+    </div>
+  )
+}
+
+function EmailRequest({ mode, onSubmit, onBack, error, notice, isSubmitting, defaultEmail }) {
+  const isResend = mode === 'resend'
+  return (
+    <AuthCard
+      kicker={isResend ? 'VERIFY EMAIL' : 'ACCOUNT RECOVERY'}
+      title={isResend ? '確認メールを再送' : 'パスワード再設定'}
+      description={isResend
+        ? '未確認の会社メールアドレスへ、新しい確認リンクを送ります。'
+        : '登録済みのメールアドレスへ、再設定リンクを送ります。'}
+    >
+      <form className="login-form" onSubmit={onSubmit} aria-busy={isSubmitting}>
+        <AuthFeedback error={error} notice={notice} />
+        <AuthInput id={`${mode}-email`} name="email" label="会社メールアドレス" type="email" autoComplete="email" icon={Mail} disabled={isSubmitting} defaultValue={defaultEmail} />
+        <button className="primary-button login-button" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? '送信しています' : 'メールを送信'}
+          {isSubmitting ? <LoaderCircle className="button-spinner" size={18} /> : <Mail size={18} />}
+        </button>
+      </form>
+      <button className="auth-back-button" type="button" onClick={onBack}>ログインへ戻る</button>
+    </AuthCard>
+  )
+}
+
+function VerifyEmail({ onConfirm, onBack, error, notice, isSubmitting }) {
+  return (
+    <AuthCard
+      kicker="EMAIL VERIFICATION"
+      title="メールアドレスを確認"
+      description="下のボタンを押すと、アカウントが有効になります。"
+    >
+      <div className="login-form">
+        <AuthFeedback error={error} notice={notice} />
+        {!notice && (
+          <button className="primary-button login-button" type="button" onClick={onConfirm} disabled={isSubmitting}>
+            {isSubmitting ? '確認しています' : 'メールアドレスを確認'}
+            {isSubmitting ? <LoaderCircle className="button-spinner" size={18} /> : <CircleCheck size={18} />}
+          </button>
+        )}
+      </div>
+      <button className="auth-back-button" type="button" onClick={onBack}>ログインへ進む</button>
+    </AuthCard>
+  )
+}
+
+function ResetPassword({ onSubmit, onBack, error, notice, isSubmitting }) {
+  return (
+    <AuthCard
+      kicker="SET NEW PASSWORD"
+      title="新しいパスワードを設定"
+      description="確認のため、新しいパスワードを2回入力してください。"
+    >
+      <form className="login-form" onSubmit={onSubmit} aria-busy={isSubmitting}>
+        <AuthFeedback error={error} notice={notice} />
+        {!notice && (
+          <>
+            <AuthInput id="reset-password" name="password" label="新しいパスワード" type="password" autoComplete="new-password" icon={KeyRound} disabled={isSubmitting} />
+            <AuthInput id="reset-password-confirm" name="passwordConfirm" label="確認用パスワード" type="password" autoComplete="new-password" icon={KeyRound} disabled={isSubmitting} />
+            <button className="primary-button login-button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? '変更しています' : 'パスワードを変更'}
+              {isSubmitting ? <LoaderCircle className="button-spinner" size={18} /> : <RefreshCw size={18} />}
+            </button>
+          </>
+        )}
+      </form>
+      <button className="auth-back-button" type="button" onClick={onBack}>ログインへ戻る</button>
+    </AuthCard>
+  )
+}
+
+function ProfileSetup({ email, profile, onSubmit, onLogout, error, isSubmitting }) {
+  return (
+    <AuthCard
+      kicker="FIRST TIME SETUP"
+      title="利用者情報を登録"
+      description="申請時に使用する氏名と部署を登録してください。次回から自動入力されます。"
+    >
+      <form className="login-form" onSubmit={onSubmit} aria-busy={isSubmitting}>
+        <AuthFeedback error={error} />
+        <div className="profile-email"><span>ログイン中</span><strong>{email}</strong></div>
+        <div className="login-field">
+          <label htmlFor="profile-display-name">氏名</label>
+          <div className="login-input">
+            <UserRound size={18} aria-hidden="true" />
+            <input id="profile-display-name" name="displayName" type="text" maxLength="100" defaultValue={profile?.display_name ?? ''} autoComplete="name" required disabled={isSubmitting} />
+          </div>
+        </div>
+        <div className="login-field">
+          <label htmlFor="profile-department">部署</label>
+          <select id="profile-department" className="auth-select" name="department" defaultValue={profile?.department ?? ''} required disabled={isSubmitting}>
+            <option value="" disabled>選択してください</option>
+            {DEPARTMENT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </div>
+        <button className="primary-button login-button" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? '保存しています' : '登録して申請へ進む'}
+          {isSubmitting ? <LoaderCircle className="button-spinner" size={18} /> : <ArrowRight size={18} />}
+        </button>
+      </form>
+      <button className="auth-back-button" type="button" onClick={onLogout} disabled={isSubmitting}>ログアウト</button>
+    </AuthCard>
+  )
+}
+
+function ApplicantSummary({ profile }) {
+  return (
+    <dl className="applicant-summary">
+      <div><dt>申請者氏名</dt><dd>{profile?.display_name ?? '―'}</dd></div>
+      <div><dt>所属部署</dt><dd>{profile?.department_label ?? '―'}</dd></div>
+    </dl>
   )
 }
 
@@ -1043,6 +1258,7 @@ function Home({ onSelect, userName, draft, onResumeDraft, onDiscardDraft }) {
 
 function RequestForm({
   request,
+  profile,
   values,
   onFieldChange,
   fieldErrors,
@@ -1154,12 +1370,10 @@ function RequestForm({
               <span className="section-number">01</span>
               <div>
                 <h2 id="applicant-heading">申請者情報</h2>
-                <p><span className="required-dot">*</span> 申請者の情報を入力してください。</p>
+                <p>初回登録したプロフィールから自動で設定されます。</p>
               </div>
             </div>
-            <div className="applicant-grid">
-              {APPLICANT_FIELDS.map(renderField)}
-            </div>
+            <ApplicantSummary profile={profile} />
           </section>
 
           <section className="form-section" aria-labelledby="details-heading">
@@ -1253,6 +1467,7 @@ function ReviewSection({ number, title, fields, values }) {
 
 function RequestConfirmation({
   request,
+  profile,
   values,
   onBack,
   onSubmit,
@@ -1326,7 +1541,16 @@ function RequestConfirmation({
           <span className="summary-category">{request.category}申請</span>
         </div>
 
-        <ReviewSection number="01" title="申請者情報" fields={APPLICANT_FIELDS} values={values} />
+        <section className="review-section" aria-labelledby="review-section-01">
+          <div className="form-section__heading">
+            <span className="section-number">01</span>
+            <div>
+              <h2 id="review-section-01">申請者情報</h2>
+              <p>ログイン中のプロフィール情報です。</p>
+            </div>
+          </div>
+          <ApplicantSummary profile={profile} />
+        </section>
         <ReviewSection number="02" title="申請内容" fields={request.fields} values={values} />
 
         <div className="confirmation-note">
@@ -1360,7 +1584,7 @@ function RequestConfirmation({
   )
 }
 
-function Complete({ request, onHome, submissionResult, submittedValues }) {
+function Complete({ request, onHome, submissionResult }) {
   const Icon = request.icon
   const headingRef = useRef(null)
   const referenceNumber = submissionResult?.reference_number
@@ -1371,8 +1595,7 @@ function Complete({ request, onHome, submissionResult, submittedValues }) {
     rejected: '却下',
   }
   const statusLabel = statusLabels[submissionResult?.status] ?? '申請中'
-  const requesterName = submittedValues?.requesterName
-    ?? submissionResult?.requester_name
+  const requesterName = submissionResult?.requester_name
     ?? '―'
 
   useEffect(() => {
@@ -1433,13 +1656,23 @@ function Complete({ request, onHome, submissionResult, submittedValues }) {
 }
 
 function App() {
+  const [authLink, setAuthLink] = useState(() => readAuthScreenFromHash())
+  const [authScreen, setAuthScreen] = useState(
+    () => readAuthScreenFromHash()?.name ?? 'login',
+  )
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [loginError, setLoginError] = useState('')
+  const [authNotice, setAuthNotice] = useState('')
+  const [pendingEmail, setPendingEmail] = useState('')
   const [accountError, setAccountError] = useState('')
   const [userName, setUserName] = useState('')
+  const [userEmail, setUserEmail] = useState('')
+  const [profile, setProfile] = useState(null)
+  const [profileError, setProfileError] = useState('')
+  const [isProfileSaving, setIsProfileSaving] = useState(false)
   const [view, setView] = useState('home')
   const [selectedKey, setSelectedKey] = useState(null)
   const [draft, setDraft] = useState(null)
@@ -1449,7 +1682,6 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitErrors, setSubmitErrors] = useState([])
   const [submissionResult, setSubmissionResult] = useState(null)
-  const [submittedValues, setSubmittedValues] = useState(null)
   const submittingRef = useRef(false)
   const selectedRequest = selectedKey ? REQUEST_TYPES[selectedKey] : null
 
@@ -1476,10 +1708,14 @@ function App() {
 
           const nextUserName = result.user.username.trim()
           setUserName(nextUserName)
+          setUserEmail(typeof result.user.email === 'string' ? result.user.email : '')
+          setProfile(result.profile_complete ? result.profile : null)
           setDraft(readRequestDraft(nextUserName))
           setIsAuthenticated(true)
         } else {
           setUserName('')
+          setUserEmail('')
+          setProfile(null)
           setDraft(null)
           setIsAuthenticated(false)
         }
@@ -1508,8 +1744,20 @@ function App() {
   useEffect(() => {
     const pageTitle = isCheckingSession
       ? '確認中 | Asset Desk'
+      : authScreen === 'verify-email'
+      ? 'メールアドレス確認 | Asset Desk'
+      : authScreen === 'reset-password'
+      ? 'パスワード変更 | Asset Desk'
       : !isAuthenticated
-      ? 'ログイン | Asset Desk'
+      ? authScreen === 'register'
+        ? 'アカウント作成 | Asset Desk'
+        : authScreen === 'resend'
+          ? '確認メール再送 | Asset Desk'
+          : authScreen === 'password-reset'
+            ? 'パスワード再設定 | Asset Desk'
+            : 'ログイン | Asset Desk'
+      : !profile
+      ? '利用者情報登録 | Asset Desk'
       : view === 'form' && selectedRequest
       ? `${selectedRequest.formTitle} | Asset Desk`
       : view === 'confirm' && selectedRequest
@@ -1518,7 +1766,7 @@ function App() {
         ? '受付完了 | Asset Desk'
         : 'Asset Desk | 社内資産申請'
     document.title = pageTitle
-  }, [isAuthenticated, isCheckingSession, selectedRequest, view])
+  }, [authScreen, isAuthenticated, isCheckingSession, profile, selectedRequest, view])
 
   const scrollToTop = () => {
     const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -1533,17 +1781,64 @@ function App() {
     setErrorFocusRequest(null)
     setSubmitErrors([])
     setSubmissionResult(null)
-    setSubmittedValues(null)
   }
 
   const returnToLogin = (message = '') => {
+    clearAuthHash()
+    setAuthLink(null)
+    setAuthScreen('login')
     setIsAuthenticated(false)
     setUserName('')
+    setUserEmail('')
+    setProfile(null)
     setDraft(null)
     setAccountError('')
+    setAuthNotice('')
     setLoginError(message)
     resetRequestFlow()
     scrollToTop()
+  }
+
+  const showAuthScreen = (screen) => {
+    setAuthScreen(screen)
+    setLoginError('')
+    setAuthNotice('')
+    scrollToTop()
+  }
+
+  const runAuthRequest = async (endpoint, data, fallbackMessage) => {
+    if (isAuthSubmitting) {
+      return null
+    }
+
+    const abortController = new AbortController()
+    const timeoutId = window.setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS)
+    setIsAuthSubmitting(true)
+    setLoginError('')
+    setAuthNotice('')
+
+    try {
+      const response = await sendJsonWithCsrf(endpoint, {
+        data,
+        signal: abortController.signal,
+      })
+      const result = await readJsonResponse(response)
+      if (!response.ok) {
+        setLoginError(formatAuthError(result, response.status, fallbackMessage))
+      }
+      return { response, result }
+    } catch (error) {
+      console.error(`${fallbackMessage}に失敗しました`, error)
+      setLoginError(
+        error?.name === 'AbortError'
+          ? '処理がタイムアウトしました。もう一度お試しください。'
+          : 'サーバーに接続できませんでした。Djangoが起動しているか確認してください。',
+      )
+      return null
+    } finally {
+      window.clearTimeout(timeoutId)
+      setIsAuthSubmitting(false)
+    }
   }
 
   const clearDraft = () => {
@@ -1590,7 +1885,6 @@ function App() {
     setErrorFocusRequest(null)
     setSubmitErrors([])
     setSubmissionResult(null)
-    setSubmittedValues(null)
     setView('form')
     scrollToTop()
   }
@@ -1606,7 +1900,6 @@ function App() {
     setErrorFocusRequest(null)
     setSubmitErrors([])
     setSubmissionResult(null)
-    setSubmittedValues(null)
     setView('form')
     scrollToTop()
   }
@@ -1786,7 +2079,6 @@ function App() {
       }
 
       setSubmissionResult(result)
-      setSubmittedValues({ ...formValues })
       clearDraft()
       setView('complete')
       scrollToTop()
@@ -1806,71 +2098,168 @@ function App() {
 
   const login = async (event) => {
     event.preventDefault()
-    if (isLoggingIn) {
+    const formData = new FormData(event.currentTarget)
+    const nextUserName = String(formData.get('loginName')).trim()
+    const password = String(formData.get('password'))
+    const requestResult = await runAuthRequest(
+      '/api/auth/login/',
+      { username: nextUserName, password },
+      'ログイン',
+    )
+    if (!requestResult?.response.ok) {
+      if (requestResult?.result?.code === 'email_verification_required') {
+        setPendingEmail(nextUserName)
+      }
+      return
+    }
+
+    const { result } = requestResult
+    if (result?.authenticated !== true || typeof result.user?.username !== 'string') {
+      setLoginError('サーバーからログイン情報を確認できませんでした。')
+      return
+    }
+
+    const authenticatedUserName = result.user.username.trim()
+    resetRequestFlow()
+    setUserName(authenticatedUserName)
+    setUserEmail(typeof result.user.email === 'string' ? result.user.email : '')
+    setProfile(result.profile_complete ? result.profile : null)
+    setDraft(readRequestDraft(authenticatedUserName))
+    setIsAuthenticated(true)
+    setAccountError('')
+    setProfileError('')
+    scrollToTop()
+  }
+
+  const register = async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const email = String(formData.get('email')).trim()
+    const result = await runAuthRequest(
+      '/api/auth/register/',
+      {
+        email,
+        password: String(formData.get('password')),
+        password_confirm: String(formData.get('passwordConfirm')),
+      },
+      'アカウント作成',
+    )
+    if (result?.response.ok) {
+      setPendingEmail(email)
+      setAuthScreen('resend')
+      setAuthNotice(result.result?.detail ?? '確認メールをご確認ください。')
+    }
+  }
+
+  const resendVerification = async (event) => {
+    event.preventDefault()
+    const email = String(new FormData(event.currentTarget).get('email')).trim()
+    const result = await runAuthRequest(
+      '/api/auth/email-verification/resend/',
+      { email },
+      '確認メール再送',
+    )
+    if (result?.response.ok) {
+      setPendingEmail(email)
+      setAuthNotice(result.result?.detail ?? '確認メールの再送を受け付けました。')
+    }
+  }
+
+  const requestPasswordReset = async (event) => {
+    event.preventDefault()
+    const email = String(new FormData(event.currentTarget).get('email')).trim()
+    const result = await runAuthRequest(
+      '/api/auth/password-reset/',
+      { email },
+      'パスワード再設定メール送信',
+    )
+    if (result?.response.ok) {
+      setAuthNotice(result.result?.detail ?? '再設定メールの送信を受け付けました。')
+    }
+  }
+
+  const confirmEmail = async () => {
+    const result = await runAuthRequest(
+      '/api/auth/email-verification/confirm/',
+      { token: authLink?.token ?? '' },
+      'メールアドレス確認',
+    )
+    if (result?.response.ok) {
+      clearAuthHash()
+      setAuthLink(null)
+      setAuthNotice(result.result?.detail ?? 'メールアドレスを確認しました。')
+    }
+  }
+
+  const confirmPasswordReset = async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const result = await runAuthRequest(
+      '/api/auth/password-reset/confirm/',
+      {
+        uid: authLink?.uid ?? '',
+        token: authLink?.token ?? '',
+        password: String(formData.get('password')),
+        password_confirm: String(formData.get('passwordConfirm')),
+      },
+      'パスワード変更',
+    )
+    if (result?.response.ok) {
+      clearAuthHash()
+      setAuthLink(null)
+      setAuthNotice(result.result?.detail ?? 'パスワードを変更しました。')
+      setIsAuthenticated(false)
+      setProfile(null)
+    }
+  }
+
+  const saveProfile = async (event) => {
+    event.preventDefault()
+    if (isProfileSaving) {
       return
     }
 
     const formData = new FormData(event.currentTarget)
-    const nextUserName = String(formData.get('loginName')).trim()
-    const password = String(formData.get('password'))
     const abortController = new AbortController()
     const timeoutId = window.setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS)
-
-    setIsLoggingIn(true)
-    setLoginError('')
+    setIsProfileSaving(true)
+    setProfileError('')
 
     try {
-      const csrfToken = await getCsrfToken(abortController.signal)
-      const response = await fetch('/api/auth/login/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
+      const response = await sendJsonWithCsrf('/api/auth/profile/', {
+        method: 'PUT',
+        data: {
+          display_name: String(formData.get('displayName')).trim(),
+          department: String(formData.get('department')),
         },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-          username: nextUserName,
-          password,
-        }),
         signal: abortController.signal,
       })
       const result = await readJsonResponse(response)
-
-      if (!response.ok) {
-        const message = typeof result?.detail === 'string'
-          ? result.detail
-          : response.status === 403
-            ? '安全確認に失敗しました。ページを再読み込みして、もう一度お試しください。'
-            : `ログインできませんでした（HTTP ${response.status}）。`
-        setLoginError(message)
+      if (response.status === 401 || result?.authenticated === false) {
+        returnToLogin('ログインの有効期限が切れました。もう一度ログインしてください。')
         return
       }
-
-      if (result?.authenticated !== true || typeof result.user?.username !== 'string') {
-        throw new Error('Login response was invalid')
+      if (!response.ok) {
+        setProfileError(formatAuthError(result, response.status, 'プロフィール保存'))
+        return
       }
-
-      const authenticatedUserName = result.user.username.trim()
-      if (!authenticatedUserName) {
-        throw new Error('Login response did not include a username')
+      if (!result?.profile_complete || !result.profile) {
+        setProfileError('保存したプロフィールを確認できませんでした。')
+        return
       }
-
-      resetRequestFlow()
-      setUserName(authenticatedUserName)
-      setDraft(readRequestDraft(authenticatedUserName))
-      setIsAuthenticated(true)
-      setAccountError('')
+      setProfile(result.profile)
+      setUserEmail(result.user?.email ?? userEmail)
       scrollToTop()
     } catch (error) {
-      console.error('ログインAPIとの通信に失敗しました', error)
-      setLoginError(
+      console.error('プロフィールを保存できませんでした', error)
+      setProfileError(
         error?.name === 'AbortError'
-          ? 'ログイン処理がタイムアウトしました。もう一度お試しください。'
-          : 'サーバーに接続できませんでした。Djangoが起動しているか確認してください。',
+          ? '保存処理がタイムアウトしました。もう一度お試しください。'
+          : 'サーバーに接続できませんでした。',
       )
     } finally {
       window.clearTimeout(timeoutId)
-      setIsLoggingIn(false)
+      setIsProfileSaving(false)
     }
   }
 
@@ -1928,11 +2317,92 @@ function App() {
     )
   }
 
-  if (!isAuthenticated) {
+  const closeAuthLink = () => {
+    clearAuthHash()
+    setAuthLink(null)
+    setAuthScreen('login')
+    setLoginError('')
+    setAuthNotice('')
+    scrollToTop()
+  }
+
+  const showAuthPortal = !isAuthenticated
+    || authScreen === 'verify-email'
+    || authScreen === 'reset-password'
+
+  if (showAuthPortal) {
+    let authContent
+    if (authScreen === 'verify-email') {
+      authContent = (
+        <VerifyEmail
+          onConfirm={confirmEmail}
+          onBack={closeAuthLink}
+          error={loginError}
+          notice={authNotice}
+          isSubmitting={isAuthSubmitting}
+        />
+      )
+    } else if (authScreen === 'reset-password') {
+      authContent = (
+        <ResetPassword
+          onSubmit={confirmPasswordReset}
+          onBack={closeAuthLink}
+          error={loginError}
+          notice={authNotice}
+          isSubmitting={isAuthSubmitting}
+        />
+      )
+    } else if (authScreen === 'register') {
+      authContent = (
+        <Register
+          onSubmit={register}
+          onBack={() => showAuthScreen('login')}
+          error={loginError}
+          isSubmitting={isAuthSubmitting}
+        />
+      )
+    } else if (authScreen === 'resend') {
+      authContent = (
+        <EmailRequest
+          mode="resend"
+          onSubmit={resendVerification}
+          onBack={() => showAuthScreen('login')}
+          error={loginError}
+          notice={authNotice}
+          isSubmitting={isAuthSubmitting}
+          defaultEmail={pendingEmail}
+        />
+      )
+    } else if (authScreen === 'password-reset') {
+      authContent = (
+        <EmailRequest
+          mode="password-reset"
+          onSubmit={requestPasswordReset}
+          onBack={() => showAuthScreen('login')}
+          error={loginError}
+          notice={authNotice}
+          isSubmitting={isAuthSubmitting}
+          defaultEmail=""
+        />
+      )
+    } else {
+      authContent = (
+        <Login
+          onLogin={login}
+          onShowRegister={() => showAuthScreen('register')}
+          onShowReset={() => showAuthScreen('password-reset')}
+          onShowResend={() => showAuthScreen('resend')}
+          error={loginError}
+          notice={authNotice}
+          isSubmitting={isAuthSubmitting}
+        />
+      )
+    }
+
     return (
       <div className="app-shell login-shell">
         <a className="skip-link" href="#main-content">本文へスキップ</a>
-        <Login onLogin={login} error={loginError} isSubmitting={isLoggingIn} />
+        {authContent}
         <footer className="app-footer login-footer">
           <span>Asset Desk</span>
           <span>社内資産申請ポータル</span>
@@ -1941,13 +2411,35 @@ function App() {
     )
   }
 
+  if (!profile) {
+    return (
+      <div className="app-shell login-shell">
+        <a className="skip-link" href="#main-content">本文へスキップ</a>
+        <ProfileSetup
+          email={userEmail || userName}
+          profile={profile}
+          onSubmit={saveProfile}
+          onLogout={logout}
+          error={profileError || accountError}
+          isSubmitting={isProfileSaving || isLoggingOut}
+        />
+        <footer className="app-footer login-footer">
+          <span>Asset Desk</span>
+          <span>社内資産申請ポータル</span>
+        </footer>
+      </div>
+    )
+  }
+
+  const displayName = profile.display_name || userName
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">本文へスキップ</a>
       <AppHeader
         onHome={goHome}
         onLogout={logout}
-        userName={userName}
+        userName={displayName}
         navigationDisabled={isSubmitting || isLoggingOut}
         isLoggingOut={isLoggingOut}
       />
@@ -1963,7 +2455,7 @@ function App() {
       {view === 'home' && (
         <Home
           onSelect={startRequest}
-          userName={userName}
+          userName={displayName}
           draft={draft}
           onResumeDraft={resumeDraft}
           onDiscardDraft={discardDraft}
@@ -1972,6 +2464,7 @@ function App() {
       {view === 'form' && selectedRequest && (
         <RequestForm
           request={selectedRequest}
+          profile={profile}
           values={formValues}
           onFieldChange={handleFieldChange}
           fieldErrors={fieldErrors}
@@ -1984,6 +2477,7 @@ function App() {
       {view === 'confirm' && selectedRequest && (
         <RequestConfirmation
           request={selectedRequest}
+          profile={profile}
           values={formValues}
           onBack={returnToForm}
           onSubmit={submitRequest}
@@ -1996,7 +2490,6 @@ function App() {
           request={selectedRequest}
           onHome={goHome}
           submissionResult={submissionResult}
-          submittedValues={submittedValues}
         />
       )}
       <footer className="app-footer">

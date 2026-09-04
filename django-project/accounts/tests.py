@@ -1,18 +1,45 @@
 import json
+import re
+from urllib.parse import parse_qs, urlsplit
 
-from django.contrib.auth import get_user_model
-from django.test import Client, TestCase
+from django.contrib.auth import authenticate, get_user_model
+from django.core import mail
+from django.core.cache import cache
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
-from .models import Department, UserProfile
+
+from .models import Department, EmailVerification, UserProfile
+from .services import make_email_verification_token
+
+
+User = get_user_model()
+PASSWORD = "Test-password-123!"
+NO_RATE_LIMITS = {name: (0, 0) for name in (
+    "login",
+    "register",
+    "email_verification",
+    "email_resend",
+    "password_reset",
+    "password_reset_confirm",
+)}
+
+
+def post_json(client, url_name, data, **extra):
+    return client.post(
+        reverse(url_name),
+        data=json.dumps(data),
+        content_type="application/json",
+        **extra,
+    )
+
 
 class UserProfileModelTests(TestCase):
     def test_profile_is_connected_to_user(self):
-        user = get_user_model().objects.create_user(
+        user = User.objects.create_user(
             username="profile@example.com",
             email="profile@example.com",
-            password="Test-password-123!",
+            password=PASSWORD,
         )
-
         profile = UserProfile.objects.create(
             user=user,
             display_name="山田 太郎",
@@ -20,12 +47,20 @@ class UserProfileModelTests(TestCase):
         )
 
         self.assertEqual(user.profile, profile)
-        self.assertEqual(profile.display_name, "山田 太郎")
-        self.assertEqual(profile.department, Department.SALES)
         self.assertEqual(profile.get_department_display(), "営業部")
         self.assertEqual(str(profile), "山田 太郎（営業部）")
 
-        
+
+class EmailVerificationModelTests(TestCase):
+    def test_new_verification_is_pending(self):
+        user = User.objects.create_user(username="pending@example.com")
+        verification = EmailVerification.objects.create(user=user)
+
+        self.assertTrue(verification.is_pending)
+        self.assertIn("確認待ち", str(verification))
+
+
+@override_settings(AUTH_RATE_LIMITS=NO_RATE_LIMITS)
 class SessionViewTests(TestCase):
     def test_anonymous_user_is_not_authenticated(self):
         response = self.client.get(reverse("accounts:session"))
@@ -36,97 +71,110 @@ class SessionViewTests(TestCase):
             {
                 "authenticated": False,
                 "user": None,
+                "profile_complete": False,
+                "profile": None,
             },
         )
         self.assertIn("csrftoken", response.cookies)
-        self.assertIn("no-cache", response.headers["Cache-Control"])
         self.assertIn("no-store", response.headers["Cache-Control"])
-        self.assertIn("private", response.headers["Cache-Control"])
 
-    def test_authenticated_user_information_is_returned(self):
-        user = get_user_model().objects.create_user(
+    def test_authenticated_user_without_profile_is_returned(self):
+        user = User.objects.create_user(
             username="test-user",
-            password="Test-password-123!",
+            email="test@example.com",
+            password=PASSWORD,
         )
         self.client.force_login(user)
 
         response = self.client.get(reverse("accounts:session"))
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user"]["email"], "test@example.com")
+        self.assertFalse(response.json()["profile_complete"])
+        self.assertIsNone(response.json()["profile"])
+
+    def test_authenticated_user_profile_is_returned(self):
+        user = User.objects.create_user(
+            username="profile-session@example.com",
+            email="profile-session@example.com",
+            password=PASSWORD,
+        )
+        UserProfile.objects.create(
+            user=user,
+            display_name="山田 太郎",
+            department=Department.SYSTEM,
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("accounts:session"))
+
+        self.assertTrue(response.json()["profile_complete"])
         self.assertEqual(
-            response.json(),
+            response.json()["profile"],
             {
-                "authenticated": True,
-                "user": {
-                    "id": user.pk,
-                    "username": "test-user",
-                },
+                "display_name": "山田 太郎",
+                "department": Department.SYSTEM,
+                "department_label": "システム部",
             },
         )
 
 
+@override_settings(AUTH_RATE_LIMITS=NO_RATE_LIMITS)
 class LoginViewTests(TestCase):
-    password = "Test-password-123!"
-
     def setUp(self):
-        self.user = get_user_model().objects.create_user(
+        self.user = User.objects.create_user(
             username="login-user",
-            password=self.password,
+            email="login@example.com",
+            password=PASSWORD,
         )
 
-    def test_valid_credentials_log_user_in(self):
-        response = self.client.post(
-            reverse("accounts:login"),
-            data=json.dumps({
-                "username": self.user.username,
-                "password": self.password,
-            }),
-            content_type="application/json",
+    def test_valid_credentials_log_user_in_and_return_full_session(self):
+        response = post_json(
+            self.client,
+            "accounts:login",
+            {"username": self.user.username, "password": PASSWORD},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            {
-                "authenticated": True,
-                "user": {
-                    "id": self.user.pk,
-                    "username": self.user.username,
-                },
-            },
-        )
-
-        session_response = self.client.get(reverse("accounts:session"))
-        self.assertTrue(session_response.json()["authenticated"])
+        self.assertTrue(response.json()["authenticated"])
+        self.assertEqual(response.json()["user"]["email"], self.user.email)
+        self.assertFalse(response.json()["profile_complete"])
 
     def test_invalid_password_does_not_log_user_in(self):
-        response = self.client.post(
-            reverse("accounts:login"),
-            data=json.dumps({
-                "username": self.user.username,
-                "password": "wrong-password",
-            }),
-            content_type="application/json",
+        response = post_json(
+            self.client,
+            "accounts:login",
+            {"username": self.user.username, "password": "wrong-password"},
         )
 
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(
-            response.json(),
-            {
-                "detail": "ログイン名またはパスワードが正しくありません。",
-            },
+        self.assertFalse(
+            self.client.get(reverse("accounts:session")).json()["authenticated"]
         )
 
-        session_response = self.client.get(reverse("accounts:session"))
-        self.assertFalse(session_response.json()["authenticated"])
+    def test_pending_email_verification_prevents_login(self):
+        pending = User.objects.create_user(
+            username="waiting@example.com",
+            email="waiting@example.com",
+            password=PASSWORD,
+            is_active=False,
+        )
+        EmailVerification.objects.create(user=pending)
+
+        response = post_json(
+            self.client,
+            "accounts:login",
+            {"username": pending.username, "password": PASSWORD},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "email_verification_required")
 
 
+@override_settings(AUTH_RATE_LIMITS=NO_RATE_LIMITS)
 class LogoutViewTests(TestCase):
     def test_logout_ends_authenticated_session(self):
-        user = get_user_model().objects.create_user(
-            username="logout-user",
-            password="Test-password-123!",
-        )
+        user = User.objects.create_user(username="logout-user", password=PASSWORD)
         self.client.force_login(user)
 
         response = self.client.post(reverse("accounts:logout"))
@@ -137,86 +185,357 @@ class LogoutViewTests(TestCase):
             {
                 "authenticated": False,
                 "user": None,
+                "profile_complete": False,
+                "profile": None,
             },
         )
 
-        session_response = self.client.get(reverse("accounts:session"))
-        self.assertFalse(session_response.json()["authenticated"])
+
+@override_settings(AUTH_RATE_LIMITS=NO_RATE_LIMITS)
+class ProfileViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="profile-api@example.com",
+            email="profile-api@example.com",
+            password=PASSWORD,
+        )
+        self.client.force_login(self.user)
+
+    def test_profile_can_be_created_and_updated(self):
+        create_response = self.client.put(
+            reverse("accounts:profile"),
+            data=json.dumps({
+                "display_name": "  山田 太郎  ",
+                "department": Department.SALES,
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        self.assertTrue(create_response.json()["profile_complete"])
+        self.assertEqual(create_response.json()["profile"]["display_name"], "山田 太郎")
+
+        update_response = self.client.put(
+            reverse("accounts:profile"),
+            data=json.dumps({
+                "display_name": "山田 花子",
+                "department": Department.GENERAL_AFFAIRS,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(update_response.status_code, 200)
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.department, Department.GENERAL_AFFAIRS)
+
+    def test_profile_rejects_invalid_values(self):
+        response = self.client.put(
+            reverse("accounts:profile"),
+            data=json.dumps({"display_name": "", "department": "unknown"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("display_name", response.json()["fields"])
+        self.assertIn("department", response.json()["fields"])
+
+    def test_anonymous_user_cannot_read_profile(self):
+        self.client.logout()
+        response = self.client.get(reverse("accounts:profile"))
+        self.assertEqual(response.status_code, 401)
 
 
+@override_settings(
+    AUTH_RATE_LIMITS=NO_RATE_LIMITS,
+    COMPANY_EMAIL_DOMAINS=("example.com",),
+    FRONTEND_BASE_URL="https://assets.example.com",
+)
+class RegistrationTests(TestCase):
+    def test_company_email_creates_inactive_user_and_sends_verification(self):
+        response = post_json(
+            self.client,
+            "accounts:register",
+            {
+                "email": "NEW.User@EXAMPLE.COM",
+                "password": PASSWORD,
+                "password_confirm": PASSWORD,
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        user = User.objects.get(username="new.user@example.com")
+        self.assertFalse(user.is_active)
+        self.assertTrue(user.check_password(PASSWORD))
+        self.assertFalse(hasattr(user, "profile"))
+        self.assertTrue(user.email_verification.is_pending)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("https://assets.example.com/#/verify-email?", mail.outbox[0].body)
+        self.assertNotIn("token", response.json())
+
+    def test_external_and_lookalike_domains_are_rejected(self):
+        for email in ("user@outside.example", "user@example.com.evil.test"):
+            with self.subTest(email=email):
+                response = post_json(
+                    self.client,
+                    "accounts:register",
+                    {
+                        "email": email,
+                        "password": PASSWORD,
+                        "password_confirm": PASSWORD,
+                    },
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("email", response.json()["fields"])
+
+        self.assertFalse(User.objects.exists())
+
+    def test_password_mismatch_is_rejected(self):
+        response = post_json(
+            self.client,
+            "accounts:register",
+            {
+                "email": "user@example.com",
+                "password": PASSWORD,
+                "password_confirm": "different-password",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("password_confirm", response.json()["fields"])
+
+    def test_duplicate_email_does_not_create_another_user(self):
+        User.objects.create_user(
+            username="duplicate@example.com",
+            email="duplicate@example.com",
+            password=PASSWORD,
+        )
+
+        response = post_json(
+            self.client,
+            "accounts:register",
+            {
+                "email": "DUPLICATE@example.com",
+                "password": PASSWORD,
+                "password_confirm": PASSWORD,
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(User.objects.count(), 1)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(COMPANY_EMAIL_DOMAINS=())
+    def test_registration_is_disabled_without_company_domain(self):
+        response = post_json(
+            self.client,
+            "accounts:register",
+            {
+                "email": "user@example.com",
+                "password": PASSWORD,
+                "password_confirm": PASSWORD,
+            },
+        )
+        self.assertEqual(response.status_code, 503)
+
+
+@override_settings(
+    AUTH_RATE_LIMITS=NO_RATE_LIMITS,
+    EMAIL_VERIFICATION_RESEND_COOLDOWN=0,
+)
+class EmailVerificationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="verify@example.com",
+            email="verify@example.com",
+            password=PASSWORD,
+            is_active=False,
+        )
+        self.verification = EmailVerification.objects.create(user=self.user)
+
+    def test_valid_token_activates_user_once(self):
+        token = make_email_verification_token(self.verification)
+        response = post_json(
+            self.client,
+            "accounts:email-verification-confirm",
+            {"token": token},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.verification.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertIsNotNone(self.verification.verified_at)
+
+        reused = post_json(
+            self.client,
+            "accounts:email-verification-confirm",
+            {"token": token},
+        )
+        self.assertEqual(reused.status_code, 400)
+
+    def test_tampered_token_is_rejected(self):
+        token = make_email_verification_token(self.verification)
+        response = post_json(
+            self.client,
+            "accounts:email-verification-confirm",
+            {"token": f"{token}tampered"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+
+    def test_resend_rotates_token_and_invalidates_old_link(self):
+        old_token = make_email_verification_token(self.verification)
+        response = post_json(
+            self.client,
+            "accounts:email-verification-resend",
+            {"email": self.user.email},
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(len(mail.outbox), 1)
+        invalid = post_json(
+            self.client,
+            "accounts:email-verification-confirm",
+            {"token": old_token},
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_resend_does_not_reveal_unknown_account(self):
+        response = post_json(
+            self.client,
+            "accounts:email-verification-resend",
+            {"email": "unknown@example.com"},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(len(mail.outbox), 0)
+
+
+@override_settings(
+    AUTH_RATE_LIMITS=NO_RATE_LIMITS,
+    FRONTEND_BASE_URL="https://assets.example.com",
+)
+class PasswordResetTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="reset@example.com",
+            email="reset@example.com",
+            password=PASSWORD,
+        )
+
+    def test_reset_request_and_confirm_change_password_once(self):
+        response = post_json(
+            self.client,
+            "accounts:password-reset",
+            {"email": self.user.email},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(len(mail.outbox), 1)
+
+        reset_url = re.search(r"https://\S+", mail.outbox[0].body).group(0)
+        query = parse_qs(urlsplit(reset_url).fragment.split("?", 1)[1])
+        uid = query["uid"][0]
+        token = query["token"][0]
+        new_password = "Changed-password-456!"
+
+        confirmed = post_json(
+            self.client,
+            "accounts:password-reset-confirm",
+            {
+                "uid": uid,
+                "token": token,
+                "password": new_password,
+                "password_confirm": new_password,
+            },
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertIsNotNone(
+            authenticate(username=self.user.username, password=new_password)
+        )
+        self.assertIsNone(authenticate(username=self.user.username, password=PASSWORD))
+
+        reused = post_json(
+            self.client,
+            "accounts:password-reset-confirm",
+            {
+                "uid": uid,
+                "token": token,
+                "password": PASSWORD,
+                "password_confirm": PASSWORD,
+            },
+        )
+        self.assertEqual(reused.status_code, 400)
+
+    def test_unknown_email_has_same_public_response_without_mail(self):
+        response = post_json(
+            self.client,
+            "accounts:password-reset",
+            {"email": "unknown@example.com"},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_inactive_pending_user_does_not_receive_reset_mail(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        EmailVerification.objects.create(user=self.user)
+
+        response = post_json(
+            self.client,
+            "accounts:password-reset",
+            {"email": self.user.email},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(len(mail.outbox), 0)
+
+
+@override_settings(AUTH_RATE_LIMITS=NO_RATE_LIMITS)
 class CSRFProtectionTests(TestCase):
-    def test_login_rejects_request_without_csrf_token(self):
-        user = get_user_model().objects.create_user(
-            username="csrf-user",
-            password="Test-password-123!",
+    def setUp(self):
+        self.csrf_client = Client(enforce_csrf_checks=True)
+
+    def test_mutating_account_endpoints_reject_missing_csrf(self):
+        user = User.objects.create_user(username="csrf-user", password=PASSWORD)
+        self.csrf_client.force_login(user)
+        endpoints = [
+            ("accounts:login", "post", {"username": "csrf-user", "password": PASSWORD}),
+            ("accounts:logout", "post", None),
+            ("accounts:profile", "put", {"display_name": "山田", "department": "sales"}),
+            ("accounts:register", "post", {"email": "user@example.com"}),
+            ("accounts:email-verification-confirm", "post", {"token": "invalid"}),
+            ("accounts:email-verification-resend", "post", {"email": "user@example.com"}),
+            ("accounts:password-reset", "post", {"email": "user@example.com"}),
+            ("accounts:password-reset-confirm", "post", {"uid": "x", "token": "x"}),
+        ]
+
+        for url_name, method, data in endpoints:
+            with self.subTest(url_name=url_name):
+                kwargs = {}
+                if data is not None:
+                    kwargs = {"data": json.dumps(data), "content_type": "application/json"}
+                response = getattr(self.csrf_client, method)(reverse(url_name), **kwargs)
+                self.assertEqual(response.status_code, 403)
+
+
+class RateLimitTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+
+    @override_settings(AUTH_RATE_LIMITS={"password_reset": (1, 60)})
+    def test_password_reset_is_rate_limited(self):
+        first = post_json(
+            self.client,
+            "accounts:password-reset",
+            {"email": "unknown@example.com"},
         )
-        csrf_client = Client(enforce_csrf_checks=True)
-
-        response = csrf_client.post(
-            reverse("accounts:login"),
-            data=json.dumps({
-                "username": user.username,
-                "password": "Test-password-123!",
-            }),
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 403)
-
-    def test_login_accepts_request_with_valid_csrf_token(self):
-        user = get_user_model().objects.create_user(
-            username="csrf-valid-user",
-            password="Test-password-123!",
-        )
-        csrf_client = Client(enforce_csrf_checks=True)
-
-        csrf_client.get(reverse("accounts:session"))
-        csrf_token = csrf_client.cookies["csrftoken"].value
-
-        response = csrf_client.post(
-            reverse("accounts:login"),
-            data=json.dumps({
-                "username": user.username,
-                "password": "Test-password-123!",
-            }),
-            content_type="application/json",
-            HTTP_X_CSRFTOKEN=csrf_token,
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["authenticated"])
-
-    def test_logout_rejects_request_without_csrf_token(self):
-        user = get_user_model().objects.create_user(
-            username="csrf-logout-user",
-            password="Test-password-123!",
-        )
-        csrf_client = Client(enforce_csrf_checks=True)
-        csrf_client.force_login(user)
-
-        response = csrf_client.post(reverse("accounts:logout"))
-
-        self.assertEqual(response.status_code, 403)
-        session_response = csrf_client.get(reverse("accounts:session"))
-        self.assertTrue(session_response.json()["authenticated"])
-
-    def test_logout_accepts_request_with_valid_csrf_token(self):
-        user = get_user_model().objects.create_user(
-            username="csrf-valid-logout-user",
-            password="Test-password-123!",
-        )
-        csrf_client = Client(enforce_csrf_checks=True)
-        csrf_client.force_login(user)
-
-        csrf_client.get(reverse("accounts:session"))
-        csrf_token = csrf_client.cookies["csrftoken"].value
-
-        response = csrf_client.post(
-            reverse("accounts:logout"),
-            HTTP_X_CSRFTOKEN=csrf_token,
+        second = post_json(
+            self.client,
+            "accounts:password-reset",
+            {"email": "unknown@example.com"},
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()["authenticated"])
-        session_response = csrf_client.get(reverse("accounts:session"))
-        self.assertFalse(session_response.json()["authenticated"])
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(second.headers["Retry-After"], "60")

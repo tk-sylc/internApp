@@ -1,4 +1,6 @@
-from rest_framework import generics
+from rest_framework import generics, serializers
+
+from accounts.models import UserProfile
 
 from .models import (
     ExternalStorageRequest,
@@ -16,7 +18,19 @@ from .serializers import (
 
 class BaseAssetRequestCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        try:
+            profile = self.request.user.profile
+        except UserProfile.DoesNotExist:
+            raise serializers.ValidationError(
+                {"profile": "申請前にプロフィールを登録してください。"}
+            )
+
+        serializer.save(
+            created_by=self.request.user,
+            requester_name=profile.display_name,
+            department=profile.get_department_display(),
+            requester_email=self.request.user.email,
+        )
 
 
 class PCRequestCreateView(BaseAssetRequestCreateView):

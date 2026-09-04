@@ -17,7 +17,12 @@ class BaseAssetRequest(models.Model):
 
     requester_name = models.CharField("申請者氏名", max_length=100)
     department = models.CharField("所属部署", max_length=100)
-    employee_number = models.CharField("社員番号", max_length=50, db_index=True)
+    requester_email = models.EmailField(
+        "申請者メールアドレス",
+        blank=True,
+        default="",
+        db_index=True,
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name="作成ユーザー",
@@ -49,7 +54,7 @@ class BaseAssetRequest(models.Model):
         return f"{self.REFERENCE_PREFIX}-{created_date:%Y%m%d}-{self.pk:06d}"
 
     def __str__(self):
-        return f"{self.requester_name}（{self.employee_number}）"
+        return f"{self.requester_name}（{self.requester_email}）"
 
 
 class PCRequest(BaseAssetRequest):
