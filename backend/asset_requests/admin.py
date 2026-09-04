@@ -2,9 +2,11 @@ import re
 from datetime import datetime
 
 from django.contrib import admin
+from django.core.paginator import Paginator
 from django.http import FileResponse, Http404
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.template.response import TemplateResponse
+from openpyxl import load_workbook
 
 from accounts.models import UserProfile
 
@@ -141,8 +143,10 @@ class LANRequestAdmin(BaseAssetRequestAdmin):
 
 @admin.register(ApprovedApplication)
 class ApprovedApplicationAdmin(admin.ModelAdmin):
+    change_list_template = (
+        'admin/asset_requests/approvedapplication/change_list.html'
+    )
     list_display = (
-        'excel_ledger_link',
         "reference_number",
         "operation_type",
         "application_type",
@@ -181,16 +185,13 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
     def reference_number(self, obj):
         return obj.reference_number if obj else "保存後に発行されます"
 
-    @admin.display(description='Excel台帳')
-    def excel_ledger_link(self, obj):
-        url = reverse(
-            'admin:asset_requests_approvedapplication_excel',
-            args=(obj.application_type,),
-        )
-        return format_html('<a href={}>ダウンロード</a>', url)
-
     def get_urls(self):
         custom_urls = [
+            path(
+                'ledger/<str:application_type>/',
+                self.admin_site.admin_view(self.preview_excel_ledger),
+                name='asset_requests_approvedapplication_ledger',
+            ),
             path(
                 'excel/<str:application_type>/',
                 self.admin_site.admin_view(self.download_excel_ledger),
@@ -198,6 +199,64 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + super().get_urls()
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['ledger_preview_links'] = [
+            {
+                'label': self._ledger_label(value),
+                'url': reverse(
+                    'admin:asset_requests_approvedapplication_ledger',
+                    args=(value,),
+                ),
+            }
+            for value in FILE_NAMES
+        ]
+        return super().changelist_view(request, extra_context=extra_context)
+
+    @staticmethod
+    def _ledger_label(application_type):
+        return (
+            FILE_NAMES[application_type]
+            .removeprefix('承認済み_')
+            .removesuffix('管理台帳.xlsx')
+        )
+
+    def preview_excel_ledger(self, request, application_type):
+        if not self.has_view_permission(request):
+            raise Http404
+        if application_type not in FILE_NAMES:
+            raise Http404
+
+        ledger_path = sync_approved_ledger(application_type)
+        workbook = load_workbook(ledger_path, read_only=True, data_only=True)
+        try:
+            worksheet = workbook.active
+            values = worksheet.iter_rows(values_only=True)
+            headers = next(values, ())
+            rows = list(values)
+        finally:
+            workbook.close()
+
+        page_obj = Paginator(rows, 50).get_page(request.GET.get('page'))
+        application_label = self._ledger_label(application_type)
+        context = {
+            **self.admin_site.each_context(request),
+            'opts': self.model._meta,
+            'title': f'{application_label} Excel台帳',
+            'headers': headers,
+            'page_obj': page_obj,
+            'record_count': len(rows),
+            'download_url': reverse(
+                'admin:asset_requests_approvedapplication_excel',
+                args=(application_type,),
+            ),
+        }
+        return TemplateResponse(
+            request,
+            'admin/asset_requests/approvedapplication/ledger_preview.html',
+            context,
+        )
 
     def download_excel_ledger(self, request, application_type):
         if not self.has_view_permission(request):

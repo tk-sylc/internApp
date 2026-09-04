@@ -1,0 +1,10 @@
+{% extends 'admin/change_list.html' %}
+
+{% block object-tools-items %}
+  {% for ledger in ledger_preview_links %}
+    <li>
+      <a href='{{ ledger.url }}' class='viewlink'>{{ ledger.label }}台帳を表示</a>
+    </li>
+  {% endfor %}
+  {{ block.super }}
+{% endblock %}

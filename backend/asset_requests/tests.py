@@ -860,17 +860,38 @@ class ApprovedApplicationAdminExcelTests(TestCase):
             entered_by_email=self.user.email,
         )
 
-    def test_admin_list_has_excel_download_link(self):
+    def test_admin_list_has_ledger_preview_link(self):
         self.client.force_login(self.user)
         list_url = reverse('admin:asset_requests_approvedapplication_changelist')
-        download_url = reverse(
-            'admin:asset_requests_approvedapplication_excel',
+        preview_url = reverse(
+            'admin:asset_requests_approvedapplication_ledger',
             args=('pc',),
         )
 
         response = self.client.get(list_url)
 
-        self.assertContains(response, download_url)
+        self.assertContains(response, preview_url)
+        self.assertContains(response, 'PC台帳を表示')
+
+    def test_admin_can_preview_current_excel_ledger(self):
+        self.client.force_login(self.user)
+        url = reverse(
+            'admin:asset_requests_approvedapplication_ledger',
+            args=('pc',),
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '台帳確認 太郎')
+        self.assertContains(response, '確認用PC')
+        self.assertContains(
+            response,
+            reverse(
+                'admin:asset_requests_approvedapplication_excel',
+                args=('pc',),
+            ),
+        )
 
     def test_admin_can_download_current_excel_ledger(self):
         self.client.force_login(self.user)

@@ -1,0 +1,77 @@
+{% extends 'admin/base_site.html' %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .ledger-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .ledger-table-wrap {
+      overflow-x: auto;
+    }
+
+    .ledger-table-wrap #result_list {
+      min-width: 100%;
+      white-space: nowrap;
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+  <div class='breadcrumbs'>
+    <a href='{% url 'admin:index' %}'>ホーム</a>
+    &rsaquo;
+    <a href='{% url 'admin:asset_requests_approvedapplication_changelist' %}'>資産台帳登録</a>
+    &rsaquo; {{ title }}
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div class='ledger-actions'>
+    <p>{{ record_count }}件の登録があります。</p>
+    <a class='button' href='{{ download_url }}'>Excelをダウンロード</a>
+  </div>
+
+  <div class='results ledger-table-wrap'>
+    <table id='result_list'>
+      <thead>
+        <tr>
+          {% for header in headers %}
+            <th scope='col'><div class='text'><span>{{ header }}</span></div></th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in page_obj %}
+          <tr class='{% cycle 'row1' 'row2' %}'>
+            {% for value in row %}
+              <td>{{ value|default_if_none:'' }}</td>
+            {% endfor %}
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan='{{ headers|length }}'>登録データはありません。</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.has_other_pages %}
+    <p class='paginator'>
+      {% if page_obj.has_previous %}
+        <a href='?page={{ page_obj.previous_page_number }}'>前へ</a>
+      {% endif %}
+      {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}ページ
+      {% if page_obj.has_next %}
+        <a href='?page={{ page_obj.next_page_number }}'>次へ</a>
+      {% endif %}
+    </p>
+  {% endif %}
+{% endblock %}
