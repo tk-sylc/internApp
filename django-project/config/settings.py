@@ -63,7 +63,7 @@ EMAIL_VERIFICATION_TIMEOUT = int(
 PASSWORD_RESET_TIMEOUT = int(os.environ.get('PASSWORD_RESET_TIMEOUT', '3600'))
 DEFAULT_FROM_EMAIL = os.environ.get(
     'DEFAULT_FROM_EMAIL',
-    'Asset Desk <no-reply@example.invalid>',
+    '社内機器管理 <no-reply@example.invalid>',
 )
 
 # The application-level limits protect the development and single-process setup.

@@ -1,4 +1,4 @@
-# internApp Django backend
+# 社内機器管理 Django backend
 
 プロジェクト全体のセットアップ、API、テスト手順はルートの `README.md` を参照してください。
 

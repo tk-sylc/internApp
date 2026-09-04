@@ -60,7 +60,7 @@ function formatDate(value) {
 }
 
 function AuthCard({ icon: Icon = KeyRound, title, description, children }) {
-  return <main className="simple-login"><section className="simple-login__card"><div className="login-logo"><FileSpreadsheet /><span>internApp</span></div><div className="auth-heading"><Icon /><div><h1>{title}</h1><p>{description}</p></div></div>{children}</section></main>
+  return <main className="simple-login"><section className="simple-login__card"><div className="login-logo"><FileSpreadsheet /><span>社内機器管理</span></div><div className="auth-heading"><Icon /><div><h1>{title}</h1><p>{description}</p></div></div>{children}</section></main>
 }
 
 function Login({ onLogin, onForgotPassword }) {
@@ -173,7 +173,7 @@ function SetNewPassword({ mode, token, uid, onComplete }) {
 }
 
 function Header({ user, onLogout }) {
-  return <header className="app-header"><div className="brand"><FileSpreadsheet /> internApp</div><span className="header-title">資産台帳</span><div className="header-user"><span>{user?.email}</span><button onClick={onLogout} title="ログアウト"><LogOut /></button></div></header>
+  return <header className="app-header"><div className="brand"><FileSpreadsheet /> 社内機器管理</div><span className="header-title">資産台帳</span><div className="header-user"><span>{user?.email}</span><button onClick={onLogout} title="ログアウト"><LogOut /></button></div></header>
 }
 
 function Dashboard({ records, loading, onNew }) {

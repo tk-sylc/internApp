@@ -55,9 +55,9 @@ def send_verification_email(verification):
     expiration_hours = max(1, settings.EMAIL_VERIFICATION_TIMEOUT // 3600)
 
     send_mail(
-        "【internApp】アカウントのご案内",
+        "【社内機器管理】アカウントのご案内",
         (
-            "管理者がinternAppのアカウントを発行しました。\n\n"
+            "管理者が社内機器管理アプリのアカウントを発行しました。\n\n"
             "次の画面を開き、本人専用のパスワードを設定してください。\n"
             f"{verification_url}\n\n"
             f"このリンクの有効期限は{expiration_hours}時間です。\n"
@@ -76,9 +76,9 @@ def send_password_reset_email(user):
     expiration_minutes = max(1, settings.PASSWORD_RESET_TIMEOUT // 60)
 
     send_mail(
-        "【internApp】パスワード再設定",
+        "【社内機器管理】パスワード再設定",
         (
-            "internAppのパスワード再設定を受け付けました。\n\n"
+            "社内機器管理アプリのパスワード再設定を受け付けました。\n\n"
             "次の画面から新しいパスワードを設定してください。\n"
             f"{reset_url}\n\n"
             f"このリンクの有効期限は{expiration_minutes}分です。\n"
