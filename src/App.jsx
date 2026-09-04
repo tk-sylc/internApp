@@ -48,10 +48,12 @@ const TYPES = {
     fields: [
       ['device_type', '機器種別'],
       ['device_name', '機器名'],
-      ['wireless_encryption', '暗号方式', 'select', ['WPA2', 'WPA', 'その他', '不明']],
-      ['wireless_encryption_other', 'その他の暗号方式'],
+    ],
+    secondaryFields: [
       ['acquisition_method', '入手方法', 'select', ['借用', '購入', '不明']],
       ['borrowed_from', '借用元'],
+      ['wireless_encryption', '暗号方式', 'select', ['WPA2', 'WPA', 'その他', '不明']],
+      ['wireless_encryption_other', 'その他の暗号方式'],
     ],
   },
   memory: {
@@ -60,6 +62,8 @@ const TYPES = {
       ['storage_type', '外部記憶装置の種類', 'select', ['USBメモリ', 'ポータブルHDD', 'SDカード', 'その他']],
       ['device_name', '機器名'],
       ['capacity', '容量'],
+    ],
+    secondaryFields: [
       ['encryption_software', '暗号化ソフト', 'select', ['装備済み', '未装備', '不明']],
       ['virus_check', 'ウイルスチェック', 'select', ['確認済み', '未確認', '不明']],
       ['virus_pattern_file', 'ウイルスパターンファイル'],
@@ -70,15 +74,15 @@ const TYPES = {
 const USAGE_FIELDS = {
   purchase: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
   loan: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
-  return: [['usage_end_date', '利用終了日', 'date'], ['location', '利用場所']],
-  disposal: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['location', '利用場所']],
+  return: [['usage_end_date', '利用終了日', 'date'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']], ['location', '利用場所']],
+  disposal: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法'], ['location', '利用場所']],
 }
 
 const OPERATION_FIELDS = {
   purchase: [['quantity', '数量', 'number', null, { min: 1, step: 1 }]],
   loan: [['management_number', '管理番号'], ['quantity', '数量', 'number', null, { min: 1, step: 1 }]],
-  return: [['management_number', '管理番号'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']]],
-  disposal: [['management_number', '管理番号'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法']],
+  return: [['management_number', '管理番号']],
+  disposal: [['management_number', '管理番号']],
 }
 
 const DEPARTMENTS = ['営業部', '総務部', 'システム部']
