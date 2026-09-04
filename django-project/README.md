@@ -1,4 +1,4 @@
-# Asset Desk Django backend
+# internApp Django backend
 
 プロジェクト全体のセットアップ、API、テスト手順はルートの `README.md` を参照してください。
 

@@ -166,3 +166,50 @@ class LANRequest(BaseAssetRequest):
                 name="lan_return_date_on_or_after_start_date",
             ),
         ]
+
+
+class ApprovedApplication(models.Model):
+    """押印済みPDFからExcel台帳へ転記するための登録データ。"""
+
+    class ApplicationType(models.TextChoices):
+        PC = "pc", "PC貸出"
+        EXTERNAL_STORAGE = "memory", "外部記憶装置貸出"
+        LAN = "lan", "LAN機器貸出"
+        SMARTPHONE = "phone", "スマートフォン購入"
+        OTHER = "other", "その他"
+
+    application_type = models.CharField(
+        "申請種別",
+        max_length=20,
+        choices=ApplicationType.choices,
+        db_index=True,
+    )
+    applicant_name = models.CharField("申請者氏名", max_length=100)
+    department = models.CharField("所属部署", max_length=100, db_index=True)
+    approved_date = models.DateField("承認日", db_index=True)
+    source_pdf = models.FileField("押印済み申請書", upload_to="approved/%Y/%m/")
+    details = models.JSONField("転記項目", default=dict)
+    notes = models.TextField("担当者メモ", blank=True)
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="登録担当者",
+        on_delete=models.PROTECT,
+        related_name="approved_applications_entered",
+    )
+    created_at = models.DateTimeField("登録日時", auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField("更新日時", auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "承認済み申請"
+        verbose_name_plural = "承認済み申請"
+
+    @property
+    def reference_number(self):
+        if self.pk is None or self.created_at is None:
+            return ""
+        created_date = timezone.localdate(self.created_at)
+        return f"ENTRY-{created_date:%Y%m%d}-{self.pk:06d}"
+
+    def __str__(self):
+        return f"{self.reference_number} {self.applicant_name}"

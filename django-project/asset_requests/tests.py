@@ -1,9 +1,11 @@
+import json
 from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -15,6 +17,7 @@ from accounts.models import Department, UserProfile
 
 from .admin import PCRequestAdmin
 from .models import (
+    ApprovedApplication,
     ExternalStorageRequest,
     LANRequest,
     PCRequest,
@@ -608,3 +611,78 @@ class AssetRequestCSRFProtectionTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(PCRequest.objects.get().created_by, self.user)
+
+
+class ApprovedApplicationAPITests(APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.temporary_directory = TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        temporary_path = Path(self.temporary_directory.name)
+        self.settings_override = override_settings(
+            MEDIA_ROOT=temporary_path / "media",
+            APPROVED_LEDGER_OUTPUT_DIR=temporary_path / "ledgers",
+        )
+        self.settings_override.enable()
+        self.addCleanup(self.settings_override.disable)
+        self.ledger_directory = temporary_path / "ledgers"
+        self.user = get_user_model().objects.create_user(
+            username="entry-operator",
+            password="Test-password-123!",
+        )
+        self.client.force_login(self.user)
+        self.url = reverse("asset_requests:approved-application-list-create")
+
+    def get_payload(self):
+        return {
+            "application_type": "pc",
+            "applicant_name": "申請 太郎",
+            "department": "営業部",
+            "approved_date": timezone.localdate().isoformat(),
+            "source_pdf": SimpleUploadedFile(
+                "approved.pdf",
+                b"%PDF-1.4 test document",
+                content_type="application/pdf",
+            ),
+            "details": json.dumps({
+                "user_name": "利用 花子",
+                "management_number": "PC-001",
+                "start_date": timezone.localdate().isoformat(),
+                "location": "東京本社",
+                "purpose": "顧客訪問",
+            }, ensure_ascii=False),
+            "notes": "押印確認済み",
+        }
+
+    def test_operator_can_register_approved_pdf_and_generate_ledger(self):
+        response = self.client.post(self.url, self.get_payload(), format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        record = ApprovedApplication.objects.get()
+        self.assertEqual(record.entered_by, self.user)
+        self.assertTrue(record.source_pdf.name.endswith("approved.pdf"))
+        self.assertIs(response.data["ledger_synced"], True)
+        self.assertTrue(
+            (self.ledger_directory / "承認済み_PC貸出管理台帳.xlsx").exists()
+        )
+
+    def test_non_pdf_upload_is_rejected(self):
+        payload = self.get_payload()
+        payload["source_pdf"] = SimpleUploadedFile(
+            "not-pdf.pdf",
+            b"not really a pdf",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(self.url, payload, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("source_pdf", response.data)
+        self.assertFalse(ApprovedApplication.objects.exists())
+
+    def test_anonymous_user_cannot_access_records(self):
+        self.client.logout()
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

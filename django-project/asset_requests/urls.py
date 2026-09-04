@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ApprovedApplicationListCreateView,
     ExternalStorageRequestCreateView,
     LANRequestCreateView,
     PCRequestCreateView,
@@ -11,6 +12,11 @@ from .views import (
 app_name = "asset_requests"
 
 urlpatterns = [
+    path(
+        "approved-applications/",
+        ApprovedApplicationListCreateView.as_view(),
+        name="approved-application-list-create",
+    ),
     path(
         "pc-requests/",
         PCRequestCreateView.as_view(),

@@ -18,6 +18,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 LEDGER_OUTPUT_DIR = Path(
     os.environ.get('LEDGER_OUTPUT_DIR', BASE_DIR / 'ledgers')
 )
+APPROVED_LEDGER_OUTPUT_DIR = Path(
+    os.environ.get('APPROVED_LEDGER_OUTPUT_DIR', BASE_DIR / 'approved_ledgers')
+)
 
 
 # Quick-start development settings - unsuitable for production
@@ -184,6 +187,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 
 # Email

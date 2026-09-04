@@ -3,7 +3,13 @@ from datetime import datetime
 
 from django.contrib import admin
 
-from .models import ExternalStorageRequest, LANRequest, PCRequest, SmartphoneRequest
+from .models import (
+    ApprovedApplication,
+    ExternalStorageRequest,
+    LANRequest,
+    PCRequest,
+    SmartphoneRequest,
+)
 
 
 class BaseAssetRequestAdmin(admin.ModelAdmin):
@@ -128,3 +134,30 @@ class LANRequestAdmin(BaseAssetRequestAdmin):
         "return_date",
     )
     search_fields = BaseAssetRequestAdmin.search_fields + ("device_name", "location")
+
+
+@admin.register(ApprovedApplication)
+class ApprovedApplicationAdmin(admin.ModelAdmin):
+    list_display = (
+        "reference_number",
+        "application_type",
+        "applicant_name",
+        "department",
+        "approved_date",
+        "entered_by",
+        "created_at",
+    )
+    list_filter = ("application_type", "department", "approved_date", "created_at")
+    search_fields = ("applicant_name", "department", "entered_by__username")
+    readonly_fields = ("reference_number", "entered_by", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+    ordering = ("-created_at",)
+
+    @admin.display(description="受付番号", ordering="id")
+    def reference_number(self, obj):
+        return obj.reference_number if obj else "保存後に発行されます"
+
+    def save_model(self, request, obj, form, change):
+        if not change and not obj.entered_by_id:
+            obj.entered_by = request.user
+        super().save_model(request, obj, form, change)

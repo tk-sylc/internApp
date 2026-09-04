@@ -1,166 +1,90 @@
-# Asset Desk
+# internApp
 
-React + Vite と Django REST Framework + SQLite で構成した、社内資産申請ポータルです。
+押印済みのPDF申請書を担当者が確認し、必要項目を登録してExcel管理台帳へ反映する社内向けアプリです。
 
-## 主な機能
+## 対象にする業務フロー
 
-- Djangoセッションによるログイン・ログアウト
-- 会社メール限定のアカウント作成
-- 期限付き・一回限りのメール確認リンクと再送
-- Django標準トークンを使ったパスワード再設定
-- 初回ログイン時の氏名・部署登録
-- プロフィールから申請者情報を自動設定
-- PC、外部記憶装置、LAN機器、スマートフォンの申請
-- 入力検証、確認画面、下書き、二重送信・タイムアウト対策
-- 管理画面での検索、絞り込み、状態更新
-- SQLiteの申請データからExcel管理台帳を自動生成・再同期
-- CSRF保護と認証操作の簡易レート制限
+```text
+社員がPDF申請書を上司へ送付
+  → 上司が内容を確認して押印
+  → 担当者がinternAppへ押印済みPDFを登録
+  → PDFを見ながら必要項目を確認・入力
+  → Djangoへ保存し、申請種別ごとのExcel台帳を自動更新
+```
 
-社員番号は使用しません。申請時の氏名・部署・メールアドレスは、Reactから送られた値ではなく、ログイン中のDjangoユーザーとプロフィールからサーバーが保存します。
+申請・上司承認・電子押印はこのアプリの対象外です。アプリは押印後の転記作業から始まります。
 
-## ディレクトリ構成
+## 現在の機能
 
-- `src/`: Reactフロントエンド
-- `django-project/config/`: Djangoプロジェクト設定
-- `django-project/accounts/`: 認証・プロフィール・メール確認API
-- `django-project/asset_requests/`: 申請モデル・API・管理画面・テスト
-- `django-project/db.sqlite3`: ローカル開発DB（Git管理対象外）
+- Djangoセッションによる担当者ログイン
+- 押印済み確認チェックとPDFアップロード（最大10MB）
+- PDF拡張子だけでなくファイル署名も検証
+- PC、外部記憶装置、LAN機器、スマートフォン、その他の入力フォーム
+- 営業部、総務部、システム部の部署選択
+- 登録前の確認画面
+- 元PDF、入力内容、登録担当者、登録日時の保存
+- 申請種別ごとのExcel台帳生成
+- 最近の登録一覧と検索
+- Django管理画面での確認
 
-バックエンドは `django-project/` が唯一の正式な実装です。
+PDFからの自動文字認識（OCR）はまだ実装していません。実際の申請書サンプルと既存Excel台帳の列が確定後、入力欄への自動候補表示を追加する想定です。
 
-## 初回セットアップ
+## 構成
 
-PowerShellでバックエンドを準備します。
+- `src/`: Reactの担当者画面
+- `django-project/accounts/`: ログイン・アカウント管理
+- `django-project/asset_requests/`: 承認済み申請、PDF、Excel出力API
+- `django-project/media/`: アップロードPDF（Git管理外）
+- `django-project/approved_ledgers/`: 生成したExcel（Git管理外）
+
+旧「社員がアプリから申請する」実装は、元の `tk-sylc/sylc` リポジトリへ統合済みです。`internApp` の復元用ブランチ `archive/asset-request-portal` にも切り替え前の状態を保存しています。
+
+## セットアップ
+
+Pythonをインストールしたあと、PowerShellで実行します。
 
 ```powershell
 cd django-project
-py -m venv .venv
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe manage.py migrate
 .\.venv\Scripts\python.exe manage.py createsuperuser
 ```
 
-プロジェクトルートでフロントエンドを準備します。
+フロントエンドを準備します。
 
 ```powershell
+cd ..
 npm.cmd install
 ```
 
-## ローカル環境の設定
+## 起動
 
-アカウント作成を有効にするには、Djangoを起動するPowerShellで会社メールのドメインを設定します。未設定の場合、新規登録は安全のため無効になります。
-
-```powershell
-$env:COMPANY_EMAIL_DOMAINS = "your-company.co.jp"
-$env:FRONTEND_BASE_URL = "http://127.0.0.1:5173"
-```
-
-複数ドメインを許可する場合はカンマで区切ります。ドメインは完全一致で判定され、未登録のサブドメインは許可されません。
-
-```powershell
-$env:COMPANY_EMAIL_DOMAINS = "your-company.co.jp,group-company.co.jp"
-```
-
-## 開発サーバーの起動
-
-1つ目のPowerShellでDjangoを起動します。
+1つ目のPowerShell:
 
 ```powershell
 cd django-project
 .\.venv\Scripts\python.exe manage.py runserver
 ```
 
-2つ目のPowerShellでReactを起動します。
+2つ目のPowerShell:
 
 ```powershell
 npm.cmd run dev
 ```
 
-- 申請画面: <http://127.0.0.1:5173/>
+- アプリ: <http://127.0.0.1:5173/>
 - Django管理画面: <http://127.0.0.1:8000/admin/>
 
-Djangoの `/` には画面を割り当てていないため、`http://127.0.0.1:8000/` の404は正常です。
-
-## アカウント作成の確認方法
-
-開発環境ではメール本文がDjangoを起動したPowerShellへ表示されます。
-
-1. Reactのログイン画面で「アカウントを作成」を選ぶ
-2. 許可された会社メールとパスワードを入力する
-3. Django側のPowerShellに表示された `/#/verify-email?...` のURLを開く
-4. 「メールアドレスを確認」を押す
-5. ログイン後、氏名と部署を登録する
-
-以後の申請では登録した氏名と部署が自動表示されます。
-
-パスワードを忘れた場合は、ログイン画面の「パスワードを忘れた方」から同様にPowerShellへ表示されたリンクを開きます。同じメールアドレスで別アカウントを再作成することはできません。
-
-## API
-
-Viteは `/api` を `http://127.0.0.1:8000` へ転送します。
+## 主なAPI
 
 | メソッド | URL | 用途 |
 | --- | --- | --- |
-| `GET` | `/api/auth/session/` | セッション復元とCSRF Cookie発行 |
+| `GET` | `/api/auth/session/` | ログイン状態とCSRF Cookie取得 |
 | `POST` | `/api/auth/login/` | ログイン |
 | `POST` | `/api/auth/logout/` | ログアウト |
-| `GET`, `PUT` | `/api/auth/profile/` | 本人プロフィールの取得・保存 |
-| `POST` | `/api/auth/register/` | 会社メールでアカウント作成 |
-| `POST` | `/api/auth/email-verification/confirm/` | メールアドレス確認 |
-| `POST` | `/api/auth/email-verification/resend/` | 確認メール再送 |
-| `POST` | `/api/auth/password-reset/` | パスワード再設定メール送信 |
-| `POST` | `/api/auth/password-reset/confirm/` | 新しいパスワードの保存 |
-| `POST` | `/api/pc-requests/` | PC貸出申請 |
-| `POST` | `/api/external-storage-requests/` | 外部記憶装置貸出申請 |
-| `POST` | `/api/lan-requests/` | LAN機器貸出申請 |
-| `POST` | `/api/smartphone-requests/` | スマートフォン購入申請 |
-
-すべての更新系APIはCSRFトークンを検証します。メール確認はリンクを開くだけでは実行されず、確認画面からのPOSTで確定します。
-
-## 本番メール設定
-
-ローカルのconsole mailerは開発専用です。本番ではSMTPまたは利用するメールサービスに合わせて設定してください。たとえばAmazon SESのSMTP資格情報を使う場合は、実際の値を環境変数またはシークレット管理サービスから渡します。
-
-```powershell
-$env:DJANGO_MAILER_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-$env:SMTP_HOST = "SMTPホスト名"
-$env:SMTP_PORT = "587"
-$env:SMTP_USERNAME = "SMTPユーザー名"
-$env:SMTP_PASSWORD = "SMTPパスワード"
-$env:SMTP_USE_TLS = "true"
-$env:DEFAULT_FROM_EMAIL = "Asset Desk <no-reply@your-company.co.jp>"
-```
-
-本番ではさらに、固定の `DJANGO_SECRET_KEY`、HTTPS、`DEBUG=False`、Secure Cookie、共有キャッシュ、AWS WAFなどのレート制御を設定してください。現在のLocMemキャッシュによる制限は、単一プロセスの開発環境向けです。
-
-## 管理と復旧
-
-- 確認済みアカウントを管理画面で停止する場合は、Userの `is_active` をオフにします。
-- 確認済みユーザーの古い確認リンクでは、停止済みアカウントを再有効化できません。
-- 停止済みアカウントの復旧は管理者が行います。
-- 既存の管理者ユーザーにメールアドレスが未登録の場合、パスワード再設定メールは送信されません。
-
-## Excel管理台帳との同期
-
-申請がSQLiteへ保存されると、申請種別に対応するExcel管理台帳が `django-project/ledgers/` に自動生成されます。Excelには申請者プロフィールと申請画面の入力項目だけが出力され、ID、申請状態、作成日時、更新日時は含まれません。社員番号は使用せず、ログイン中のユーザーのメールアドレスを出力します。
-
-- `PC貸出管理台帳.xlsx`
-- `外部記憶装置貸出管理台帳.xlsx`
-- `LAN機器貸出管理台帳.xlsx`
-- `スマートフォン購入管理台帳.xlsx`
-
-Excelが開かれているなどの理由で同期できなかった場合も、申請自体はSQLiteへ保存されます。Excelを閉じてから次のコマンドを実行すると、SQLiteの内容から4種類の台帳を再生成できます。
-
-```powershell
-cd django-project
-.\.venv\Scripts\python.exe manage.py sync_ledgers
-```
-
-1種類だけ再生成する場合は `--type` を指定します。
-
-```powershell
-.\.venv\Scripts\python.exe manage.py sync_ledgers --type pc
-```
+| `GET` | `/api/approved-applications/` | 登録履歴一覧 |
+| `POST` | `/api/approved-applications/` | PDFと転記内容の登録 |
 
 ## テスト
 
@@ -177,4 +101,10 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-今回のDB変更前のローカルバックアップは `django-project/db.before-auth-migration.sqlite3` です。Git管理対象外にしておき、不要になった段階で手動削除してください。
+## 次の実装候補
+
+1. 実際のPDF申請書とExcel台帳の列名を確定する
+2. PDFプレビューを入力画面の横に表示する
+3. OCRで文字を抽出し、入力欄へ候補を自動設定する
+4. 担当者が原本と照合して確定する
+5. 既存Excelの書式・保存場所に合わせて出力方式を調整する
