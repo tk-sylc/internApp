@@ -190,6 +190,44 @@ class LoginViewTests(TestCase):
         self.assertEqual(response.json()["code"], "email_verification_required")
 
 
+class AdminEmailLoginTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="admin-internal-name",
+            email="admin@example.com",
+            password=PASSWORD,
+            is_staff=True,
+        )
+
+    def test_admin_login_form_uses_email_address(self):
+        response = self.client.get(reverse("admin:login"))
+
+        self.assertContains(response, "会社メールアドレス")
+        self.assertNotContains(response, "ユーザー名:")
+
+    def test_staff_user_can_log_in_to_admin_with_email(self):
+        response = self.client.post(
+            reverse("admin:login"),
+            {
+                "username": "ADMIN@EXAMPLE.COM",
+                "password": PASSWORD,
+                "next": reverse("admin:index"),
+            },
+        )
+
+        self.assertRedirects(response, reverse("admin:index"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+
+    def test_admin_username_is_not_accepted_as_login_identifier(self):
+        response = self.client.post(
+            reverse("admin:login"),
+            {"username": self.user.username, "password": PASSWORD},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+
 @override_settings(AUTH_RATE_LIMITS=NO_RATE_LIMITS)
 class LogoutViewTests(TestCase):
     def test_logout_ends_authenticated_session(self):

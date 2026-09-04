@@ -2,6 +2,7 @@ import uuid
 
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import AuthenticationForm
 from django import forms
 from django.db import transaction
 from django.utils import timezone
@@ -11,6 +12,32 @@ from .services import log_email_delivery_failure, normalize_email, send_verifica
 
 
 User = get_user_model()
+
+
+class EmailAdminAuthenticationForm(AuthenticationForm):
+    """Django管理画面もメイン画面と同じメール認証に揃える。"""
+
+    username = forms.EmailField(
+        label="会社メールアドレス",
+        widget=forms.EmailInput(
+            attrs={
+                "autofocus": True,
+                "autocomplete": "email",
+                "placeholder": "name@example.co.jp",
+            }
+        ),
+    )
+
+    def clean(self):
+        email = normalize_email(self.cleaned_data.get("username", ""))
+        matches = list(User.objects.filter(email__iexact=email).order_by("pk")[:2])
+        if len(matches) != 1:
+            raise self.get_invalid_login_error()
+        self.cleaned_data["username"] = matches[0].get_username()
+        return super().clean()
+
+
+admin.site.login_form = EmailAdminAuthenticationForm
 
 
 class AccountInvitationForm(forms.ModelForm):

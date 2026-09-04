@@ -13,10 +13,48 @@ from .models import (
 
 
 APPROVED_TYPE_DETAIL_FIELDS = {
-    "pc": {"device_name"},
-    "memory": {"device_name", "capacity"},
-    "lan": {"device_type", "device_name"},
-    "phone": {"os", "model_name", "storage"},
+    "pc": {
+        "device_name",
+        "cpu_ghz",
+        "ram_gb",
+        "os",
+        "os_version",
+        "security_software",
+        "antivirus_installed",
+        "office_version",
+        "browser",
+        "browser_version",
+        "adobe_reader_version",
+        "flash_player_version",
+        "performance",
+    },
+    "memory": {
+        "storage_type",
+        "device_name",
+        "capacity",
+        "encryption_software",
+        "virus_check",
+        "virus_pattern_file",
+    },
+    "lan": {
+        "device_type",
+        "device_name",
+        "wireless_encryption",
+        "wireless_encryption_other",
+        "acquisition_method",
+        "borrowed_from",
+    },
+    "phone": {
+        "os",
+        "os_version",
+        "model_name",
+        "storage",
+        "performance",
+        "phone_number",
+        "carrier",
+        "security_software",
+        "antivirus_installed",
+    },
     "other": {"summary"},
 }
 
@@ -24,7 +62,6 @@ APPROVED_OPERATION_DETAIL_FIELDS = {
     "purchase": {"quantity", "purpose"},
     "loan": {
         "management_number",
-        "user_name",
         "quantity",
         "purpose",
     },
@@ -257,6 +294,11 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             for key, value in details.items()
             if key in expected_fields and value not in (None, "")
         }
+
+        # 返却では終了日のみを扱い、過去の画面や直接APIから送られた
+        # 利用開始日は保存しない。
+        if operation_type == "return":
+            cleaned_details.pop("usage_start_date", None)
 
         attrs["details"] = cleaned_details
         return attrs

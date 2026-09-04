@@ -647,7 +647,18 @@ class ApprovedApplicationAPITests(APITestCase):
             "department": "営業部",
             "details": {
                 "device_name": "ノートPC",
-                "user_name": "利用 花子",
+                "cpu_ghz": "3.2",
+                "ram_gb": "16",
+                "os": "Windows",
+                "os_version": "11 Pro",
+                "security_software": "VBC（ウイルスバスター Corp.）",
+                "antivirus_installed": "導入済み",
+                "office_version": "Microsoft 365",
+                "browser": "Microsoft Edge",
+                "browser_version": "140",
+                "adobe_reader_version": "2025.001",
+                "flash_player_version": "未導入",
+                "performance": "標準業務用",
                 "management_number": "PC-001",
                 "usage_start_date": timezone.localdate().isoformat(),
                 "usage_end_date": relative_date(30),
@@ -674,11 +685,18 @@ class ApprovedApplicationAPITests(APITestCase):
         worksheet = load_workbook(ledger_path).active
         headers = [cell.value for cell in worksheet[1]]
         self.assertIn("機種名", headers)
+        self.assertIn("CPU（GHz）", headers)
+        self.assertIn("RAM（GB）", headers)
+        self.assertIn("ウイルス対策ソフト導入確認", headers)
+        self.assertIn("Officeバージョン", headers)
+        self.assertIn("Adobe Readerバージョン", headers)
+        self.assertIn("Flash Playerバージョン", headers)
         self.assertIn("利用開始日", headers)
         self.assertIn("利用終了日", headers)
         self.assertIn("利用場所", headers)
         self.assertNotIn("承認日", headers)
         self.assertNotIn("購入日", headers)
+        self.assertNotIn("利用者氏名", headers)
         operator_column = headers.index("登録担当者") + 1
         self.assertEqual(worksheet.cell(row=2, column=operator_column).value, "台帳 責任者")
 
@@ -708,6 +726,65 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertEqual(record.applicant_name, "")
         self.assertEqual(record.department, "")
         self.assertEqual(record.details, {})
+
+    def test_return_ignores_usage_start_date_and_keeps_end_date(self):
+        payload = self.get_payload()
+        payload["operation_type"] = "return"
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        details = ApprovedApplication.objects.get().details
+        self.assertNotIn("usage_start_date", details)
+        self.assertEqual(details["usage_end_date"], relative_date(30))
+
+    def test_phone_lan_and_memory_fields_are_preserved(self):
+        cases = {
+            "phone": {
+                "os": "iOS",
+                "os_version": "26",
+                "model_name": "iPhone",
+                "storage": "256GB",
+                "performance": "業務用",
+                "phone_number": "090-0000-0000",
+                "carrier": "テストキャリア",
+                "security_software": "テスト製品",
+                "antivirus_installed": "導入済み",
+            },
+            "lan": {
+                "device_type": "無線LANルーター",
+                "device_name": "テストルーター",
+                "wireless_encryption": "WPA2",
+                "wireless_encryption_other": "",
+                "acquisition_method": "借用",
+                "borrowed_from": "本社",
+            },
+            "memory": {
+                "storage_type": "ポータブルHDD",
+                "device_name": "テストHDD",
+                "capacity": "1TB",
+                "encryption_software": "装備済み",
+                "virus_check": "確認済み",
+                "virus_pattern_file": "2026-09-04版",
+            },
+        }
+
+        for application_type, details in cases.items():
+            with self.subTest(application_type=application_type):
+                response = self.client.post(
+                    self.url,
+                    {
+                        "application_type": application_type,
+                        "operation_type": "purchase",
+                        "details": details,
+                    },
+                    format="json",
+                )
+
+                self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+                record = ApprovedApplication.objects.latest("pk")
+                expected = {key: value for key, value in details.items() if value}
+                self.assertDictEqual(record.details, expected)
 
     def test_anonymous_user_cannot_access_records(self):
         self.client.logout()

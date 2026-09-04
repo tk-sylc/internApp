@@ -17,19 +17,45 @@ from .models import ApprovedApplication
 DETAIL_COLUMNS = {
     "pc": (
         ("機種名", "device_name"),
+        ("CPU（GHz）", "cpu_ghz"),
+        ("RAM（GB）", "ram_gb"),
+        ("OS", "os"),
+        ("OSバージョン", "os_version"),
+        ("セキュリティソフト", "security_software"),
+        ("ウイルス対策ソフト導入確認", "antivirus_installed"),
+        ("Officeバージョン", "office_version"),
+        ("ブラウザ", "browser"),
+        ("ブラウザバージョン", "browser_version"),
+        ("Adobe Readerバージョン", "adobe_reader_version"),
+        ("Flash Playerバージョン", "flash_player_version"),
+        ("性能", "performance"),
     ),
     "memory": (
+        ("外部記憶装置の種類", "storage_type"),
         ("機器名", "device_name"),
         ("容量", "capacity"),
+        ("暗号化ソフト", "encryption_software"),
+        ("ウイルスチェック", "virus_check"),
+        ("ウイルスパターンファイル", "virus_pattern_file"),
     ),
     "lan": (
         ("機器種別", "device_type"),
         ("機器名", "device_name"),
+        ("暗号方式", "wireless_encryption"),
+        ("その他の暗号方式", "wireless_encryption_other"),
+        ("入手方法", "acquisition_method"),
+        ("借用元", "borrowed_from"),
     ),
     "phone": (
         ("OS", "os"),
+        ("OSバージョン", "os_version"),
         ("機種", "model_name"),
         ("容量", "storage"),
+        ("性能", "performance"),
+        ("電話番号", "phone_number"),
+        ("キャリア名", "carrier"),
+        ("セキュリティソフト", "security_software"),
+        ("ウイルス対策ソフト導入確認", "antivirus_installed"),
     ),
     "other": (("転記内容", "_all"),),
 }
@@ -40,7 +66,6 @@ OPERATION_COLUMNS = (
     ("利用終了日", "usage_end_date"),
     ("利用場所", "location"),
     ("数量", "quantity"),
-    ("利用者氏名", "user_name"),
     ("目的", "purpose"),
     ("返却時の状態", "condition"),
     ("廃棄理由", "disposal_reason"),
@@ -100,7 +125,7 @@ def sync_approved_ledger(application_type):
     worksheet.title = "転記データ"
     worksheet.freeze_panes = "A2"
 
-    common_headers = ("受付番号", "処理区分", "対象者氏名", "所属部署", "登録担当者", "登録日時")
+    common_headers = ("受付番号", "処理区分", "申請者氏名", "所属部署", "登録担当者", "登録日時")
     all_columns = (*columns, *OPERATION_COLUMNS)
     worksheet.append([*common_headers, *(label for label, _key in all_columns), "担当者メモ"])
     header_fill = PatternFill(fill_type="solid", fgColor="17376D")
