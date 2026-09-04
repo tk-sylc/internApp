@@ -13,6 +13,29 @@
 
 申請・上司承認・電子押印はこのアプリの対象外です。アプリは押印後の転記作業から始まります。
 
+## 画面ごとの役割
+
+internAppには、日常業務用の「メイン画面」と、設定・管理用の「Django管理画面」があります。
+
+| 画面 | URL | 主な利用者 | 役割 |
+| --- | --- | --- | --- |
+| メイン画面 | <http://127.0.0.1:5173/> | 登録担当者 | 購入・貸出・返却・廃棄の入力、内容確認、Excel台帳への登録、最近の登録の検索 |
+| Django管理画面 | <http://127.0.0.1:8000/admin/> | 管理者 | アカウントの作成・停止、登録データの確認・修正、登録担当者や登録日時の確認 |
+
+普段の転記作業にはメイン画面を使います。管理画面は、アカウント管理や誤登録の修正など、管理者だけが必要な場面で使います。
+
+### メイン画面の操作手順
+
+```text
+ログイン
+  → 購入・貸出・返却・廃棄を選択
+  → 機器種別と必要項目を入力
+  → 上司の承認済みチェック
+  → 内容を確認してExcel台帳へ登録
+```
+
+購入では管理番号を入力しません。貸出・返却・廃棄では、既存の機器を特定するため管理番号が必須です。
+
 ## 現在の機能
 
 - Djangoセッションによる担当者ログイン
@@ -37,6 +60,30 @@ PDFファイル自体はアプリへアップロードせず、従来のメー�
 - `django-project/approved_ledgers/`: 生成したExcel（Git管理外）
 
 旧「社員がアプリから申請する」実装は、元の `tk-sylc/sylc` リポジトリへ統合済みです。`internApp` の復元用ブランチ `archive/asset-request-portal` にも切り替え前の状態を保存しています。
+
+## アカウントの作成と権限
+
+現在は、メイン画面から利用者自身がアカウントを作る方式ではありません。管理者がDjango管理画面から、必要な担当者のアカウントを発行します。
+
+### 最初の管理者を作る
+
+```powershell
+cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\django-project
+.\.venv\Scripts\python.exe manage.py createsuperuser
+```
+
+画面の案内に従って、ユーザー名、メールアドレス、パスワードを入力します。
+
+### 担当者のアカウントを作る
+
+1. Django管理画面 <http://127.0.0.1:8000/admin/> を開く
+2. 管理者アカウントでログインする
+3. 「ユーザー」を開く
+4. 「ユーザーを追加」を押す
+5. ユーザー名とパスワードを登録する
+6. 必要に応じてメールアドレスを登録する
+
+メイン画面だけを使う担当者には通常ユーザーを作成します。管理画面にも入れる担当者には「スタッフ権限」と必要な権限を付与します。すべてを管理する人だけをスーパーユーザーにしてください。
 
 ## セットアップ
 
@@ -74,6 +121,56 @@ npm.cmd run dev
 
 - アプリ: <http://127.0.0.1:5173/>
 - Django管理画面: <http://127.0.0.1:8000/admin/>
+
+## Pythonと仮想環境の役割
+
+このプロジェクトでは、`.venv` というinternApp専用のPython環境を使用します。Django REST Frameworkやopenpyxlなど、internAppに必要なライブラリはこの中に入っています。
+
+仮想環境を有効化せずに `python manage.py runserver` を実行すると、PC全体のPythonが使われ、`rest_framework` などが見つからないことがあります。通常は次のコマンドを使用してください。
+
+```powershell
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+先に仮想環境を有効化する方法もあります。
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\.venv\Scripts\Activate.ps1
+python manage.py runserver
+```
+
+ターミナルの先頭に `(.venv)` と表示されていれば、`python` だけでinternApp専用環境が使われます。サーバーを終了するときは `Ctrl+C` を押します。
+
+## データとExcelの保存場所
+
+- ローカルデータベース: `django-project/db.sqlite3`
+- 生成したExcel台帳: `django-project/approved_ledgers/`
+
+Excelは処理を1件登録したときに、機器種別ごとに生成・更新されます。データベースとExcelはGitHubへpushされません。
+
+## よくあるエラー
+
+### `No module named 'rest_framework'`
+
+PC全体のPythonを使っている可能性があります。次を実行します。
+
+```powershell
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+### `can't open file ... manage.py`
+
+現在いるフォルダが違います。移動してから起動します。
+
+```powershell
+cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\django-project
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+### `KeyboardInterrupt`
+
+起動中に `Ctrl+C` などで処理を中断したことを表します。Djangoのコードエラーではありません。もう一度起動し、`Starting development server` と表示されるまで待ちます。
 
 ## 主なAPI
 
