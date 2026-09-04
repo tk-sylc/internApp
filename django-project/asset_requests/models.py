@@ -196,9 +196,9 @@ class ApprovedApplication(models.Model):
         choices=OperationType.choices,
         db_index=True,
     )
-    applicant_name = models.CharField("申請者氏名", max_length=100)
-    department = models.CharField("所属部署", max_length=100, db_index=True)
-    approved_date = models.DateField("承認日", db_index=True)
+    applicant_name = models.CharField("対象者氏名", max_length=100, blank=True)
+    department = models.CharField("所属部署", max_length=100, blank=True, db_index=True)
+    approved_date = models.DateField("旧承認日", null=True, blank=True, db_index=True)
     details = models.JSONField("転記項目", default=dict)
     notes = models.TextField("担当者メモ", blank=True)
     entered_by = models.ForeignKey(

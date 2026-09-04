@@ -14,28 +14,32 @@ const OPERATIONS = {
 }
 
 const TYPES = {
-  pc: { label: 'PC', fields: [['device_name', '機種・端末名']] },
+  pc: { label: 'PC', fields: [['device_name', '機種名']] },
   phone: { label: 'スマートフォン', fields: [['os', 'OS', 'select', ['iOS', 'Android', '指定なし']], ['model_name', '機種'], ['storage', '容量']] },
   lan: { label: 'LAN機器', fields: [['device_type', '機器種別'], ['device_name', '機器名']] },
   memory: { label: '外部記憶装置', fields: [['device_name', '機器名'], ['capacity', '容量']] },
 }
 
+const COMMON_FIELDS = [
+  ['usage_start_date', '利用開始日', 'date'],
+  ['usage_end_date', '利用終了日', 'date'],
+  ['location', '利用場所'],
+]
+
 const OPERATION_FIELDS = {
-  purchase: [['operation_date', '購入日', 'date'], ['quantity', '数量', 'number'], ['purpose', '購入目的', 'textarea']],
-  loan: [['management_number', '管理番号'], ['user_name', '利用者氏名'], ['operation_date', '貸出日', 'date'], ['expected_return_date', '返却予定日', 'date'], ['quantity', '数量', 'number'], ['location', '利用場所'], ['purpose', '利用目的', 'textarea']],
-  return: [['management_number', '管理番号'], ['operation_date', '返却日', 'date'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']]],
-  disposal: [['management_number', '管理番号'], ['operation_date', '廃棄日', 'date'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法']],
+  purchase: [['quantity', '数量', 'number'], ['purpose', '目的', 'textarea']],
+  loan: [['management_number', '管理番号'], ['user_name', '利用者氏名'], ['quantity', '数量', 'number'], ['purpose', '目的', 'textarea']],
+  return: [['management_number', '管理番号'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']]],
+  disposal: [['management_number', '管理番号'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法']],
 }
 
 const DEPARTMENTS = ['営業部', '総務部', 'システム部']
-const today = () => new Date().toISOString().slice(0, 10)
 const newForm = (operation) => ({
   operation_type: operation,
   application_type: 'pc',
   applicant_name: '',
   department: '',
-  approved_date: today(),
-  details: { operation_date: today(), quantity: '1' },
+  details: {},
   notes: '',
 })
 
@@ -51,12 +55,6 @@ function errorText(body, fallback) {
   if (typeof body.detail === 'string') return body.detail
   const fieldMessage = Object.values(body.fields ?? {}).flat().find((item) => typeof item === 'string')
   return fieldMessage ?? Object.values(body).flat().find((item) => typeof item === 'string') ?? fallback
-}
-
-function formatDate(value) {
-  if (!value) return '—'
-  const date = value.includes('T') ? new Date(value) : new Date(`${value}T00:00:00`)
-  return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(date)
 }
 
 function AuthCard({ icon: Icon = KeyRound, title, description, children }) {
@@ -191,7 +189,7 @@ function Dashboard({ records, loading, onNew }) {
       </section>
       <section className="records-card">
         <div className="section-head"><div><span className="eyebrow">RECENT</span><h2>最近の登録</h2></div><label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="受付番号・氏名で検索" /></label></div>
-        {loading ? <div className="empty"><LoaderCircle className="spin" />読み込み中</div> : visible.length === 0 ? <div className="empty"><FileSpreadsheet /><strong>{query ? '該当する登録はありません' : 'まだ登録はありません'}</strong></div> : <div className="table-wrap"><table><thead><tr><th>受付番号</th><th>処理</th><th>機器</th><th>申請者</th><th>部署</th><th>承認日</th><th>登録責任者</th></tr></thead><tbody>{visible.map((record) => <tr key={record.id}><td><strong>{record.reference_number}</strong></td><td><span className={`operation-chip ${record.operation_type}`}>{OPERATIONS[record.operation_type]?.label || '貸出'}</span></td><td>{TYPES[record.application_type]?.label}</td><td>{record.applicant_name}</td><td>{record.department}</td><td>{formatDate(record.approved_date)}</td><td><strong>{record.entered_by_name}</strong><small className="operator-email">{record.entered_by_email}</small></td></tr>)}</tbody></table></div>}
+        {loading ? <div className="empty"><LoaderCircle className="spin" />読み込み中</div> : visible.length === 0 ? <div className="empty"><FileSpreadsheet /><strong>{query ? '該当する登録はありません' : 'まだ登録はありません'}</strong></div> : <div className="table-wrap"><table><thead><tr><th>受付番号</th><th>処理</th><th>機器</th><th>対象者</th><th>部署</th><th>登録責任者</th></tr></thead><tbody>{visible.map((record) => <tr key={record.id}><td><strong>{record.reference_number}</strong></td><td><span className={`operation-chip ${record.operation_type}`}>{OPERATIONS[record.operation_type]?.label || '貸出'}</span></td><td>{TYPES[record.application_type]?.label}</td><td>{record.applicant_name || '—'}</td><td>{record.department || '—'}</td><td><strong>{record.entered_by_name}</strong><small className="operator-email">{record.entered_by_email}</small></td></tr>)}</tbody></table></div>}
       </section>
     </main>
   )
@@ -203,9 +201,10 @@ function Stepper({ step }) {
 
 function Field({ field, value, onChange }) {
   const [key, label, kind = 'text', options] = field
-  if (kind === 'textarea') return <label className="wide">{label}<textarea rows="3" value={value ?? ''} onChange={(event) => onChange(key, event.target.value)} /></label>
-  if (kind === 'select') return <label>{label}<select value={value ?? ''} onChange={(event) => onChange(key, event.target.value)}><option value="">選択してください</option>{options.map((option) => <option key={option}>{option}</option>)}</select></label>
-  return <label>{label}<input type={kind} min={kind === 'number' ? 1 : undefined} value={value ?? ''} onChange={(event) => onChange(key, event.target.value)} /></label>
+  const optionalLabel = `${label}（任意）`
+  if (kind === 'textarea') return <label className="wide">{optionalLabel}<textarea rows="3" value={value ?? ''} onChange={(event) => onChange(key, event.target.value)} /></label>
+  if (kind === 'select') return <label>{optionalLabel}<select value={value ?? ''} onChange={(event) => onChange(key, event.target.value)}><option value="">選択しない</option>{options.map((option) => <option key={option}>{option}</option>)}</select></label>
+  return <label>{optionalLabel}<input type={kind} min={kind === 'number' ? 1 : undefined} value={value ?? ''} onChange={(event) => onChange(key, event.target.value)} /></label>
 }
 
 function RegisterFlow({ operationKey, operator, onCancel, onComplete }) {
@@ -214,14 +213,13 @@ function RegisterFlow({ operationKey, operator, onCancel, onComplete }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const operation = OPERATIONS[operationKey]
-  const fields = [...TYPES[form.application_type].fields, ...OPERATION_FIELDS[operationKey]]
+  const fields = [...TYPES[form.application_type].fields, ...COMMON_FIELDS, ...OPERATION_FIELDS[operationKey]]
   const operatorName = operator.profile?.display_name || operator.user?.email
   const operatorEmail = operator.user?.email
 
   const setDetail = (key, value) => setForm((current) => ({ ...current, details: { ...current.details, [key]: value } }))
   const next = () => {
     setError('')
-    if ([form.applicant_name, form.department, form.approved_date, ...fields.map(([key]) => form.details[key])].some((value) => value === undefined || value === '')) return setError('未入力の項目があります。')
     setStep((current) => current + 1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -237,7 +235,6 @@ function RegisterFlow({ operationKey, operator, onCancel, onComplete }) {
           application_type: form.application_type,
           applicant_name: form.applicant_name,
           department: form.department,
-          approved_date: form.approved_date,
           details: form.details,
           notes: form.notes,
         }),
@@ -257,8 +254,8 @@ function RegisterFlow({ operationKey, operator, onCancel, onComplete }) {
       <div className="flow-top"><button className="text-button" onClick={onCancel}><ArrowLeft />一覧へ戻る</button><Stepper step={step} /></div>
       <section className="flow-card">
         <div className={`flow-operation ${operation.tone}`}>{operation.label}</div>
-        {step === 1 && <><h1>{operation.label}内容を入力</h1><p className="lead">必要な項目だけを表示しています。</p><div className="form-grid"><div className="responsible-card wide"><span>登録責任者（変更不可）</span><strong>{operatorName}</strong><small>{operatorEmail}</small><p>ログイン中のアカウントが自動で記録されます。</p></div><label>機器種別<select value={form.application_type} onChange={(event) => setForm((current) => ({ ...current, application_type: event.target.value, details: { operation_date: current.details.operation_date, quantity: current.details.quantity } }))}>{Object.entries(TYPES).map(([key, type]) => <option key={key} value={key}>{type.label}</option>)}</select></label><label>申請者氏名<input value={form.applicant_name} onChange={(event) => setForm({ ...form, applicant_name: event.target.value })} /></label><label>所属部署<select value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })}><option value="">選択してください</option>{DEPARTMENTS.map((department) => <option key={department}>{department}</option>)}</select></label><label>承認日<input type="date" max={today()} value={form.approved_date} onChange={(event) => setForm({ ...form, approved_date: event.target.value })} /></label>{fields.map((field) => <Field key={field[0]} field={field} value={form.details[field[0]]} onChange={setDetail} />)}<label className="wide">担当者メモ（任意）<textarea rows="3" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label></div></>}
-        {step === 2 && <><h1>登録内容を確認</h1><p className="lead">内容に間違いがなければ台帳へ登録してください。</p><dl className="review-list"><div><dt>登録責任者</dt><dd>{operatorName}（{operatorEmail}）</dd></div><div><dt>処理</dt><dd>{operation.label}</dd></div><div><dt>機器種別</dt><dd>{TYPES[form.application_type].label}</dd></div><div><dt>申請者</dt><dd>{form.applicant_name}（{form.department}）</dd></div><div><dt>承認日</dt><dd>{formatDate(form.approved_date)}</dd></div>{fields.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{form.details[key]}</dd></div>)}</dl></>}
+        {step === 1 && <><h1>{operation.label}内容を入力</h1><p className="lead">入力できる項目はすべて任意です。分かる範囲だけ記載してください。</p><div className="form-grid"><div className="responsible-card wide"><span>登録責任者（変更不可）</span><strong>{operatorName}</strong><small>{operatorEmail}</small><p>ログイン中のアカウントが自動で記録されます。</p></div><label>機器種別<select value={form.application_type} onChange={(event) => setForm((current) => ({ ...current, application_type: event.target.value }))}>{Object.entries(TYPES).map(([key, type]) => <option key={key} value={key}>{type.label}</option>)}</select></label><label>対象者氏名（任意）<input value={form.applicant_name} onChange={(event) => setForm({ ...form, applicant_name: event.target.value })} /></label><label>所属部署（任意）<select value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })}><option value="">選択しない</option>{DEPARTMENTS.map((department) => <option key={department}>{department}</option>)}</select></label>{fields.map((field) => <Field key={field[0]} field={field} value={form.details[field[0]]} onChange={setDetail} />)}<label className="wide">担当者メモ（任意）<textarea rows="3" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label></div></>}
+        {step === 2 && <><h1>登録内容を確認</h1><p className="lead">未入力の項目は「未入力」と表示されます。このまま登録できます。</p><dl className="review-list"><div><dt>登録責任者</dt><dd>{operatorName}（{operatorEmail}）</dd></div><div><dt>処理</dt><dd>{operation.label}</dd></div><div><dt>機器種別</dt><dd>{TYPES[form.application_type].label}</dd></div><div><dt>対象者</dt><dd>{form.applicant_name || '未入力'}</dd></div><div><dt>所属部署</dt><dd>{form.department || '未入力'}</dd></div>{fields.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{form.details[key] || '未入力'}</dd></div>)}</dl></>}
         {error && <div className="alert error"><X />{error}</div>}
         <div className="flow-actions">{step > 1 && <button className="button secondary" onClick={() => setStep(step - 1)}><ArrowLeft />戻る</button>}<span />{step < 2 ? <button className="button primary" onClick={next}>確認へ<ArrowRight /></button> : <button className="button primary" onClick={submit} disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <FileSpreadsheet />}台帳へ登録</button>}</div>
       </section>

@@ -21,23 +21,25 @@ APPROVED_TYPE_DETAIL_FIELDS = {
 }
 
 APPROVED_OPERATION_DETAIL_FIELDS = {
-    "purchase": {"operation_date", "quantity", "purpose"},
+    "purchase": {"quantity", "purpose"},
     "loan": {
         "management_number",
         "user_name",
-        "operation_date",
-        "expected_return_date",
         "quantity",
-        "location",
         "purpose",
     },
-    "return": {"management_number", "operation_date", "condition"},
+    "return": {"management_number", "condition"},
     "disposal": {
         "management_number",
-        "operation_date",
         "disposal_reason",
         "disposal_method",
     },
+}
+
+APPROVED_COMMON_DETAIL_FIELDS = {
+    "usage_start_date",
+    "usage_end_date",
+    "location",
 }
 
 
@@ -194,7 +196,6 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "operation_type",
             "applicant_name",
             "department",
-            "approved_date",
             "details",
             "notes",
             "entered_by_name",
@@ -208,6 +209,12 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "entered_by_email",
             "created_at",
         ]
+        extra_kwargs = {
+            "applicant_name": {"required": False, "allow_blank": True},
+            "department": {"required": False, "allow_blank": True},
+            "details": {"required": False},
+            "notes": {"required": False, "allow_blank": True},
+        }
 
     def get_entered_by_name(self, obj):
         if obj.entered_by_name:
@@ -221,12 +228,9 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
     def get_entered_by_email(self, obj):
         return obj.entered_by_email or obj.entered_by.email
 
-    def validate_approved_date(self, value):
-        if value > timezone.localdate():
-            raise serializers.ValidationError("未来の日付は指定できません。")
-        return value
-
     def validate_department(self, value):
+        if value == "":
+            return value
         allowed = {"営業部", "総務部", "システム部"}
         if value not in allowed:
             raise serializers.ValidationError("部署を選択してください。")
@@ -235,7 +239,7 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         application_type = attrs.get("application_type")
         operation_type = attrs.get("operation_type")
-        details = attrs.get("details")
+        details = attrs.get("details", {})
         type_fields = APPROVED_TYPE_DETAIL_FIELDS.get(application_type)
         operation_fields = APPROVED_OPERATION_DETAIL_FIELDS.get(operation_type)
 
@@ -246,22 +250,13 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
         if operation_fields is None:
             raise serializers.ValidationError({"operation_type": "処理区分が不正です。"})
 
-        expected_fields = type_fields | operation_fields
+        expected_fields = type_fields | operation_fields | APPROVED_COMMON_DETAIL_FIELDS
 
         cleaned_details = {
             key: value
             for key, value in details.items()
-            if key in expected_fields
+            if key in expected_fields and value not in (None, "")
         }
-        missing = [
-            key
-            for key in expected_fields
-            if cleaned_details.get(key) in (None, "")
-        ]
-        if missing:
-            raise serializers.ValidationError(
-                {"details": f"未入力の転記項目があります: {', '.join(sorted(missing))}"}
-            )
 
         attrs["details"] = cleaned_details
         return attrs

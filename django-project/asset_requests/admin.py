@@ -142,7 +142,6 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
         "application_type",
         "applicant_name",
         "department",
-        "approved_date",
         "entered_by_name",
         "entered_by_email",
         "created_at",
@@ -151,7 +150,6 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
         "operation_type",
         "application_type",
         "department",
-        "approved_date",
         "created_at",
     )
     search_fields = (
@@ -169,6 +167,7 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+    exclude = ("approved_date",)
     date_hierarchy = "created_at"
     ordering = ("-created_at",)
 

@@ -16,7 +16,7 @@ from .models import ApprovedApplication
 
 DETAIL_COLUMNS = {
     "pc": (
-        ("機種・端末名", "device_name"),
+        ("機種名", "device_name"),
     ),
     "memory": (
         ("機器名", "device_name"),
@@ -36,12 +36,12 @@ DETAIL_COLUMNS = {
 
 OPERATION_COLUMNS = (
     ("管理番号", "management_number"),
-    ("処理日", "operation_date"),
+    ("利用開始日", "usage_start_date"),
+    ("利用終了日", "usage_end_date"),
+    ("利用場所", "location"),
     ("数量", "quantity"),
     ("利用者氏名", "user_name"),
-    ("返却予定日", "expected_return_date"),
-    ("利用場所", "location"),
-    ("利用目的", "purpose"),
+    ("目的", "purpose"),
     ("返却時の状態", "condition"),
     ("廃棄理由", "disposal_reason"),
     ("廃棄方法", "disposal_method"),
@@ -100,7 +100,7 @@ def sync_approved_ledger(application_type):
     worksheet.title = "転記データ"
     worksheet.freeze_panes = "A2"
 
-    common_headers = ("受付番号", "処理区分", "申請者氏名", "所属部署", "承認日", "登録担当者", "登録日時")
+    common_headers = ("受付番号", "処理区分", "対象者氏名", "所属部署", "登録担当者", "登録日時")
     all_columns = (*columns, *OPERATION_COLUMNS)
     worksheet.append([*common_headers, *(label for label, _key in all_columns), "担当者メモ"])
     header_fill = PatternFill(fill_type="solid", fgColor="17376D")
@@ -124,7 +124,6 @@ def sync_approved_ledger(application_type):
             record.get_operation_type_display(),
             _safe_value(record.applicant_name),
             _safe_value(record.department),
-            record.approved_date,
             _safe_value(_operator_name(record)),
             _excel_datetime(record.created_at),
             *detail_values,

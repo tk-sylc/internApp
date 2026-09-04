@@ -645,13 +645,12 @@ class ApprovedApplicationAPITests(APITestCase):
             "operation_type": "loan",
             "applicant_name": "申請 太郎",
             "department": "営業部",
-            "approved_date": timezone.localdate().isoformat(),
             "details": {
                 "device_name": "ノートPC",
                 "user_name": "利用 花子",
                 "management_number": "PC-001",
-                "operation_date": timezone.localdate().isoformat(),
-                "expected_return_date": relative_date(30),
+                "usage_start_date": timezone.localdate().isoformat(),
+                "usage_end_date": relative_date(30),
                 "quantity": 1,
                 "location": "東京本社",
                 "purpose": "顧客訪問",
@@ -674,6 +673,12 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertTrue(ledger_path.exists())
         worksheet = load_workbook(ledger_path).active
         headers = [cell.value for cell in worksheet[1]]
+        self.assertIn("機種名", headers)
+        self.assertIn("利用開始日", headers)
+        self.assertIn("利用終了日", headers)
+        self.assertIn("利用場所", headers)
+        self.assertNotIn("承認日", headers)
+        self.assertNotIn("購入日", headers)
         operator_column = headers.index("登録担当者") + 1
         self.assertEqual(worksheet.cell(row=2, column=operator_column).value, "台帳 責任者")
 
@@ -682,7 +687,6 @@ class ApprovedApplicationAPITests(APITestCase):
         payload["operation_type"] = "purchase"
         payload["details"] = {
             "device_name": "ノートPC",
-            "operation_date": timezone.localdate().isoformat(),
             "quantity": 2,
             "purpose": "新入社員用",
         }
@@ -692,15 +696,18 @@ class ApprovedApplicationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertNotIn("management_number", ApprovedApplication.objects.get().details)
 
-    def test_loan_requires_management_number(self):
-        payload = self.get_payload()
-        details = payload["details"]
-        details.pop("management_number")
+    def test_all_input_fields_can_be_omitted(self):
+        response = self.client.post(
+            self.url,
+            {"application_type": "phone", "operation_type": "loan"},
+            format="json",
+        )
 
-        response = self.client.post(self.url, payload, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertFalse(ApprovedApplication.objects.exists())
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        record = ApprovedApplication.objects.get()
+        self.assertEqual(record.applicant_name, "")
+        self.assertEqual(record.department, "")
+        self.assertEqual(record.details, {})
 
     def test_anonymous_user_cannot_access_records(self):
         self.client.logout()
