@@ -161,9 +161,21 @@ def login_view(request):
     if limited:
         return rate_limit_response(window)
 
-    user = authenticate(request, username=username, password=password)
-    if user is None:
+    if "@" in username:
+        email_matches = list(
+            User.objects.filter(email__iexact=username).order_by("pk")[:2]
+        )
+        candidate = email_matches[0] if len(email_matches) == 1 else None
+    else:
         candidate = User.objects.filter(username__iexact=username).first()
+
+    authentication_username = candidate.get_username() if candidate else username
+    user = authenticate(
+        request,
+        username=authentication_username,
+        password=password,
+    )
+    if user is None:
         if candidate and candidate.check_password(password) and not candidate.is_active:
             if has_pending_email_verification(candidate):
                 return JsonResponse(

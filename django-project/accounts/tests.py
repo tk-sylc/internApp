@@ -138,6 +138,17 @@ class LoginViewTests(TestCase):
         self.assertEqual(response.json()["user"]["email"], self.user.email)
         self.assertFalse(response.json()["profile_complete"])
 
+    def test_email_logs_in_user_whose_username_is_different(self):
+        response = post_json(
+            self.client,
+            "accounts:login",
+            {"username": "LOGIN@EXAMPLE.COM", "password": PASSWORD},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["authenticated"])
+        self.assertEqual(response.json()["user"]["username"], "login-user")
+
     def test_invalid_password_does_not_log_user_in(self):
         response = post_json(
             self.client,
