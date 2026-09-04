@@ -2,8 +2,13 @@ import re
 from datetime import datetime
 
 from django.contrib import admin
+from django.http import FileResponse, Http404
+from django.urls import path, reverse
+from django.utils.html import format_html
 
 from accounts.models import UserProfile
+
+from .approved_ledger_sync import FILE_NAMES, sync_approved_ledger
 
 from .models import (
     ApprovedApplication,
@@ -137,6 +142,7 @@ class LANRequestAdmin(BaseAssetRequestAdmin):
 @admin.register(ApprovedApplication)
 class ApprovedApplicationAdmin(admin.ModelAdmin):
     list_display = (
+        'excel_ledger_link',
         "reference_number",
         "operation_type",
         "application_type",
@@ -174,6 +180,37 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
     @admin.display(description="受付番号", ordering="id")
     def reference_number(self, obj):
         return obj.reference_number if obj else "保存後に発行されます"
+
+    @admin.display(description='Excel台帳')
+    def excel_ledger_link(self, obj):
+        url = reverse(
+            'admin:asset_requests_approvedapplication_excel',
+            args=(obj.application_type,),
+        )
+        return format_html('<a href={}>ダウンロード</a>', url)
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                'excel/<str:application_type>/',
+                self.admin_site.admin_view(self.download_excel_ledger),
+                name='asset_requests_approvedapplication_excel',
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def download_excel_ledger(self, request, application_type):
+        if not self.has_view_permission(request):
+            raise Http404
+        if application_type not in FILE_NAMES:
+            raise Http404
+
+        ledger_path = sync_approved_ledger(application_type)
+        return FileResponse(
+            ledger_path.open('rb'),
+            as_attachment=True,
+            filename=FILE_NAMES[application_type],
+        )
 
     def save_model(self, request, obj, form, change):
         if not change and not obj.entered_by_id:

@@ -1,11 +1,12 @@
 from datetime import date, timedelta
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
-from django.test import override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -831,3 +832,68 @@ class ApprovedApplicationAPITests(APITestCase):
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class ApprovedApplicationAdminExcelTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.temporary_directory = TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.settings_override = override_settings(
+            APPROVED_LEDGER_OUTPUT_DIR=Path(self.temporary_directory.name),
+        )
+        self.settings_override.enable()
+        self.addCleanup(self.settings_override.disable)
+        self.user = get_user_model().objects.create_superuser(
+            username='ledger-admin',
+            email='ledger-admin@example.com',
+            password='Test-password-123!',
+        )
+        self.record = ApprovedApplication.objects.create(
+            application_type='pc',
+            operation_type='loan',
+            applicant_name='台帳確認 太郎',
+            department='システム部',
+            details={'device_name': '確認用PC'},
+            entered_by=self.user,
+            entered_by_name='台帳管理者',
+            entered_by_email=self.user.email,
+        )
+
+    def test_admin_list_has_excel_download_link(self):
+        self.client.force_login(self.user)
+        list_url = reverse('admin:asset_requests_approvedapplication_changelist')
+        download_url = reverse(
+            'admin:asset_requests_approvedapplication_excel',
+            args=('pc',),
+        )
+
+        response = self.client.get(list_url)
+
+        self.assertContains(response, download_url)
+
+    def test_admin_can_download_current_excel_ledger(self):
+        self.client.force_login(self.user)
+        url = reverse(
+            'admin:asset_requests_approvedapplication_excel',
+            args=('pc',),
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('attachment', response.headers['Content-Disposition'])
+        workbook = load_workbook(BytesIO(b''.join(response.streaming_content)))
+        worksheet = workbook.active
+        self.assertEqual(worksheet.cell(row=2, column=3).value, '台帳確認 太郎')
+
+    def test_unknown_ledger_type_returns_not_found(self):
+        self.client.force_login(self.user)
+        url = reverse(
+            'admin:asset_requests_approvedapplication_excel',
+            args=('unknown',),
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 404)
