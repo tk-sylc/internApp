@@ -142,7 +142,28 @@ $env:COMPANY_EMAIL_DOMAINS = "example.co.jp"
 
 ## セットアップ
 
-PythonとMySQL Serverをインストールします。最初にMySQLへ管理者で接続し、開発用のデータベースと専用ユーザーを作成します。
+PythonとMySQL Serverをインストールします。
+
+### WindowsでMySQLを自動設定する場合
+
+MySQL Server 8.4をインストールしたあと、管理者として開いたPowerShellでリポジトリ直下から実行します。
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\setup_mysql.ps1
+```
+
+このスクリプトは `MySQL84` Windowsサービス、`intern_app` データベース、アプリ専用ユーザーを作成し、DjangoのマイグレーションとSQLiteデータ移行を実行します。ランダム生成した接続情報は現在のWindowsユーザーの環境変数へ保存し、Gitには保存しません。
+
+MySQL管理者パスワードが必要な場合は、次のコマンドで現在のWindowsユーザーに保存された値を確認できます。画面共有中などに表示しないでください。
+
+```powershell
+[Environment]::GetEnvironmentVariable("INTERNAPP_MYSQL_ROOT_PASSWORD", "User")
+```
+
+### 手動でMySQLを設定する場合
+
+MySQLへ管理者で接続し、開発用のデータベースと専用ユーザーを作成します。
 
 ```sql
 CREATE DATABASE intern_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -231,6 +252,7 @@ Excelは処理を1件登録したときに、機器種別ごとに生成・更�
 ```powershell
 cd backend
 $env:DATABASE_ENGINE = "sqlite"
+$env:PYTHONUTF8 = "1"
 .\.venv\Scripts\python.exe manage.py dumpdata --natural-foreign --natural-primary --exclude contenttypes --exclude auth.permission --exclude sessions --exclude admin.logentry --indent 2 --output sqlite-data.json
 ```
 
