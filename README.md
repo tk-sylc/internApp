@@ -13,6 +13,7 @@ React + Vite と Django REST Framework + SQLite で構成した、社内資産�
 - PC、外部記憶装置、LAN機器、スマートフォンの申請
 - 入力検証、確認画面、下書き、二重送信・タイムアウト対策
 - 管理画面での検索、絞り込み、状態更新
+- SQLiteの申請データからExcel管理台帳を自動生成・再同期
 - CSRF保護と認証操作の簡易レート制限
 
 社員番号は使用しません。申請時の氏名・部署・メールアドレスは、Reactから送られた値ではなく、ログイン中のDjangoユーザーとプロフィールからサーバーが保存します。
@@ -138,6 +139,28 @@ $env:DEFAULT_FROM_EMAIL = "Asset Desk <no-reply@your-company.co.jp>"
 - 確認済みユーザーの古い確認リンクでは、停止済みアカウントを再有効化できません。
 - 停止済みアカウントの復旧は管理者が行います。
 - 既存の管理者ユーザーにメールアドレスが未登録の場合、パスワード再設定メールは送信されません。
+
+## Excel管理台帳との同期
+
+申請がSQLiteへ保存されると、申請種別に対応するExcel管理台帳が `django-project/ledgers/` に自動生成されます。Excelには申請者プロフィールと申請画面の入力項目だけが出力され、ID、申請状態、作成日時、更新日時は含まれません。社員番号は使用せず、ログイン中のユーザーのメールアドレスを出力します。
+
+- `PC貸出管理台帳.xlsx`
+- `外部記憶装置貸出管理台帳.xlsx`
+- `LAN機器貸出管理台帳.xlsx`
+- `スマートフォン購入管理台帳.xlsx`
+
+Excelが開かれているなどの理由で同期できなかった場合も、申請自体はSQLiteへ保存されます。Excelを閉じてから次のコマンドを実行すると、SQLiteの内容から4種類の台帳を再生成できます。
+
+```powershell
+cd django-project
+.\.venv\Scripts\python.exe manage.py sync_ledgers
+```
+
+1種類だけ再生成する場合は `--type` を指定します。
+
+```powershell
+.\.venv\Scripts\python.exe manage.py sync_ledgers --type pc
+```
 
 ## テスト
 

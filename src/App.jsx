@@ -1613,6 +1613,13 @@ function Complete({ request, onHome, submissionResult }) {
         <h1 ref={headingRef} tabIndex="-1">申請内容を受け付けました</h1>
         <p>申請内容は保存されました。担当部署で内容を確認後、申請者へご連絡します。</p>
 
+        {submissionResult?.ledger_warning && (
+          <div className="submit-error complete-warning" role="alert">
+            <Info size={18} aria-hidden="true" />
+            <span>{submissionResult.ledger_warning} 管理者に再同期を依頼してください。</span>
+          </div>
+        )}
+
         <div className="receipt-card">
           <div className="receipt-card__header">
             <span className={`request-icon request-icon--${request.tone}`} aria-hidden="true">

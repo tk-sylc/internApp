@@ -1,11 +1,15 @@
 from datetime import date, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
+from openpyxl import load_workbook
 
 from accounts.models import Department, UserProfile
 
@@ -34,6 +38,14 @@ def expected_reference_number(asset_request):
 class AuthenticatedAssetRequestAPITestCase(APITestCase):
     def setUp(self):
         super().setUp()
+        self.temporary_directory = TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.ledger_directory = Path(self.temporary_directory.name)
+        self.ledger_settings = override_settings(
+            LEDGER_OUTPUT_DIR=self.ledger_directory,
+        )
+        self.ledger_settings.enable()
+        self.addCleanup(self.ledger_settings.disable)
         self.user = get_user_model().objects.create_user(
             username="asset-request-user",
             email="asset-request@example.com",
@@ -141,6 +153,45 @@ class PCRequestCreateAPITests(AuthenticatedAssetRequestAPITestCase):
             response.data["reference_number"],
             expected_reference_number(pc_request),
         )
+        self.assertIs(response.data["ledger_synced"], True)
+        self.assertIsNone(response.data["ledger_warning"])
+
+        workbook = load_workbook(self.ledger_directory / "PC貸出管理台帳.xlsx")
+        worksheet = workbook["PC貸出"]
+        self.assertEqual(
+            tuple(cell.value for cell in worksheet[1]),
+            (
+                "申請者氏名",
+                "所属部署",
+                "メールアドレス",
+                "利用者氏名",
+                "管理番号",
+                "利用開始日",
+                "利用場所",
+                "利用目的",
+            ),
+        )
+        self.assertEqual(worksheet.max_row, 2)
+
+    def test_request_remains_saved_when_ledger_sync_fails(self):
+        blocked_output_path = self.ledger_directory / "not-a-directory"
+        blocked_output_path.write_text(
+            "block directory creation",
+            encoding="utf-8",
+        )
+
+        with self.assertLogs("asset_requests.views", level="ERROR"):
+            with override_settings(LEDGER_OUTPUT_DIR=blocked_output_path):
+                response = self.client.post(
+                    reverse(self.url_name),
+                    self.get_payload(),
+                    format="json",
+                )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(PCRequest.objects.count(), 1)
+        self.assertIs(response.data["ledger_synced"], False)
+        self.assertIsNotNone(response.data["ledger_warning"])
 
     def test_pc_request_requires_purpose(self):
         payload = self.get_payload()
