@@ -1,11 +1,9 @@
-import json
 from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -620,7 +618,6 @@ class ApprovedApplicationAPITests(APITestCase):
         self.addCleanup(self.temporary_directory.cleanup)
         temporary_path = Path(self.temporary_directory.name)
         self.settings_override = override_settings(
-            MEDIA_ROOT=temporary_path / "media",
             APPROVED_LEDGER_OUTPUT_DIR=temporary_path / "ledgers",
         )
         self.settings_override.enable()
@@ -640,12 +637,7 @@ class ApprovedApplicationAPITests(APITestCase):
             "applicant_name": "申請 太郎",
             "department": "営業部",
             "approved_date": timezone.localdate().isoformat(),
-            "source_pdf": SimpleUploadedFile(
-                "approved.pdf",
-                b"%PDF-1.4 test document",
-                content_type="application/pdf",
-            ),
-            "details": json.dumps({
+            "details": {
                 "device_name": "ノートPC",
                 "user_name": "利用 花子",
                 "management_number": "PC-001",
@@ -654,17 +646,16 @@ class ApprovedApplicationAPITests(APITestCase):
                 "quantity": 1,
                 "location": "東京本社",
                 "purpose": "顧客訪問",
-            }, ensure_ascii=False),
+            },
             "notes": "押印確認済み",
         }
 
-    def test_operator_can_register_approved_pdf_and_generate_ledger(self):
-        response = self.client.post(self.url, self.get_payload(), format="multipart")
+    def test_operator_can_register_approved_entry_and_generate_ledger(self):
+        response = self.client.post(self.url, self.get_payload(), format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         record = ApprovedApplication.objects.get()
         self.assertEqual(record.entered_by, self.user)
-        self.assertTrue(record.source_pdf.name.endswith("approved.pdf"))
         self.assertIs(response.data["ledger_synced"], True)
         self.assertTrue(
             (self.ledger_directory / "承認済み_PC管理台帳.xlsx").exists()
@@ -673,44 +664,26 @@ class ApprovedApplicationAPITests(APITestCase):
     def test_purchase_does_not_require_management_number(self):
         payload = self.get_payload()
         payload["operation_type"] = "purchase"
-        payload["details"] = json.dumps(
-            {
-                "device_name": "ノートPC",
-                "operation_date": timezone.localdate().isoformat(),
-                "quantity": 2,
-                "purpose": "新入社員用",
-            },
-            ensure_ascii=False,
-        )
+        payload["details"] = {
+            "device_name": "ノートPC",
+            "operation_date": timezone.localdate().isoformat(),
+            "quantity": 2,
+            "purpose": "新入社員用",
+        }
 
-        response = self.client.post(self.url, payload, format="multipart")
+        response = self.client.post(self.url, payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertNotIn("management_number", ApprovedApplication.objects.get().details)
 
     def test_loan_requires_management_number(self):
         payload = self.get_payload()
-        details = json.loads(payload["details"])
+        details = payload["details"]
         details.pop("management_number")
-        payload["details"] = json.dumps(details, ensure_ascii=False)
 
-        response = self.client.post(self.url, payload, format="multipart")
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertFalse(ApprovedApplication.objects.exists())
-
-    def test_non_pdf_upload_is_rejected(self):
-        payload = self.get_payload()
-        payload["source_pdf"] = SimpleUploadedFile(
-            "not-pdf.pdf",
-            b"not really a pdf",
-            content_type="application/pdf",
-        )
-
-        response = self.client.post(self.url, payload, format="multipart")
+        response = self.client.post(self.url, payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("source_pdf", response.data)
         self.assertFalse(ApprovedApplication.objects.exists())
 
     def test_anonymous_user_cannot_access_records(self):

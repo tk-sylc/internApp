@@ -1,7 +1,6 @@
 import logging
 
 from rest_framework import generics, serializers
-from rest_framework.parsers import FormParser, MultiPartParser
 
 from accounts.models import UserProfile
 
@@ -88,7 +87,6 @@ class SmartphoneRequestCreateView(BaseAssetRequestCreateView):
 class ApprovedApplicationListCreateView(generics.ListCreateAPIView):
     queryset = ApprovedApplication.objects.select_related("entered_by").all()
     serializer_class = ApprovedApplicationSerializer
-    parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
         serializer.save(entered_by=self.request.user)

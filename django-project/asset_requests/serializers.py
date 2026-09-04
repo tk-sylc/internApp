@@ -195,25 +195,12 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "applicant_name",
             "department",
             "approved_date",
-            "source_pdf",
             "details",
             "notes",
             "entered_by_name",
             "created_at",
         ]
         read_only_fields = ["id", "reference_number", "entered_by_name", "created_at"]
-
-    def validate_source_pdf(self, value):
-        if value.size > 10 * 1024 * 1024:
-            raise serializers.ValidationError("PDFは10MB以下にしてください。")
-        if not value.name.casefold().endswith(".pdf"):
-            raise serializers.ValidationError("PDFファイルを選択してください。")
-
-        signature = value.read(5)
-        value.seek(0)
-        if signature != b"%PDF-":
-            raise serializers.ValidationError("有効なPDFファイルではありません。")
-        return value
 
     def validate_approved_date(self, value):
         if value > timezone.localdate():

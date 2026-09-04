@@ -73,13 +73,6 @@ td strong { color: #243147; }
 .flow-operation.orange { color: #a45e13; background: #fff4e6; }
 .flow-operation.red { color: #a53f3f; background: #fff0f0; }
 .lead { margin-bottom: 25px; }
-.drop-zone { min-height: 190px; padding: 25px; border: 2px dashed #cdd4de; border-radius: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #768195; background: #fafbfc; cursor: pointer; }
-.drop-zone:hover, .drop-zone.has-file { border-color: #4b76c9; background: #f4f7fd; }
-.drop-zone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.drop-zone strong { color: #334057; }
-.drop-zone small { font-weight: 400; }
-.drop-icon { width: 50px; height: 50px; display: grid; place-items: center; color: #356bd4; background: #eaf1fe; border-radius: 11px; }
-.drop-icon svg { width: 27px; height: 27px; }
 .approval-check { margin-top: 14px; padding: 14px; display: flex; align-items: flex-start; gap: 10px; border-radius: 9px; background: #f4f6f8; }
 .approval-check input { width: 17px; height: 17px; margin-top: 2px; }
 .approval-check span { display: grid; gap: 2px; }
@@ -88,10 +81,6 @@ td strong { color: #243147; }
 .wide { grid-column: 1 / -1; }
 textarea { resize: vertical; line-height: 1.55; }
 .flow-actions { margin-top: 26px; padding-top: 21px; border-top: 1px solid #e9ecf0; display: grid; grid-template-columns: auto 1fr auto; }
-.review-file { margin: 20px 0; padding: 14px; display: flex; gap: 11px; align-items: center; color: #285fc4; background: #f1f5fc; border-radius: 9px; }
-.review-file div { display: grid; gap: 2px; }
-.review-file small { color: #748198; }
-.review-file strong { color: #2d3a51; }
 .review-list { margin: 0; border: 1px solid #e2e6ec; border-radius: 9px; overflow: hidden; }
 .review-list div { min-height: 50px; padding: 12px 15px; display: grid; grid-template-columns: 170px 1fr; align-items: center; border-bottom: 1px solid #eaedf1; }
 .review-list div:last-child { border: 0; }

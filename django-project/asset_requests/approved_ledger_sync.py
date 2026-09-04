@@ -88,7 +88,7 @@ def sync_approved_ledger(application_type):
     worksheet.title = "転記データ"
     worksheet.freeze_panes = "A2"
 
-    common_headers = ("受付番号", "処理区分", "申請者氏名", "所属部署", "承認日", "元PDF", "登録担当者", "登録日時")
+    common_headers = ("受付番号", "処理区分", "申請者氏名", "所属部署", "承認日", "登録担当者", "登録日時")
     all_columns = (*columns, *OPERATION_COLUMNS)
     worksheet.append([*common_headers, *(label for label, _key in all_columns), "担当者メモ"])
     header_fill = PatternFill(fill_type="solid", fgColor="17376D")
@@ -113,7 +113,6 @@ def sync_approved_ledger(application_type):
             _safe_value(record.applicant_name),
             _safe_value(record.department),
             record.approved_date,
-            Path(record.source_pdf.name).name,
             _safe_value(record.entered_by.get_username()),
             _excel_datetime(record.created_at),
             *detail_values,

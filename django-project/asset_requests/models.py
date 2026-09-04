@@ -169,7 +169,7 @@ class LANRequest(BaseAssetRequest):
 
 
 class ApprovedApplication(models.Model):
-    """押印済みPDFからExcel台帳へ転記するための登録データ。"""
+    """承認済みの資産手続きをExcel台帳へ転記するための登録データ。"""
 
     class ApplicationType(models.TextChoices):
         PC = "pc", "PC貸出"
@@ -199,7 +199,6 @@ class ApprovedApplication(models.Model):
     applicant_name = models.CharField("申請者氏名", max_length=100)
     department = models.CharField("所属部署", max_length=100, db_index=True)
     approved_date = models.DateField("承認日", db_index=True)
-    source_pdf = models.FileField("押印済み申請書", upload_to="approved/%Y/%m/")
     details = models.JSONField("転記項目", default=dict)
     notes = models.TextField("担当者メモ", blank=True)
     entered_by = models.ForeignKey(
