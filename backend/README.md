@@ -1,42 +1,27 @@
-# 社内機器管理 Django backend
+# 社内機器管理 — バックエンド
 
-プロジェクト全体のセットアップ、API、テスト手順はルートの `README.md` を参照してください。
+担当者の認証、承認済み手続きの登録、台帳の閲覧・修正・取消、変更履歴の保存、Excel生成を担当するDjangoバックエンドです。
 
-## Start the development server
+## 構成
 
-Open a new PowerShell terminal at the repository root, then run:
+| ディレクトリ | 役割 |
+| --- | --- |
+| `accounts/` | アカウント招待、ログイン、パスワード再設定、プロフィール |
+| `asset_requests/` | 台帳データ、変更履歴、同期状態、Excel生成、API |
+| `config/` | Django設定、URL定義、WSGIエントリーポイント |
+| `approved_ledgers/` | 生成したExcel台帳の標準保存先（Git管理外） |
 
-```powershell
-cd backend
-$env:MYSQL_DATABASE = "intern_app"
-$env:MYSQL_USER = "intern_app"
-$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
-.\.venv\Scripts\python.exe manage.py runserver
-```
+登録内容・変更履歴・同期状態をMySQLに保存し、その内容からExcelを生成します。担当者向けの画面はリポジトリ直下の `src/` で実装しています。
 
-The development server will be available at <http://127.0.0.1:8000/>.
+## 開発・運用の手順
 
-React画面は別ターミナルで起動し、<http://127.0.0.1:5173/> を開きます。Djangoのルート `/` に画面はありません。
+共通の手順は、ルートのREADMEにまとめています。
 
-Stop it with `Ctrl+C`.
+- [アプリの機能と使い方](../README.md#主な機能と使い方)
+- [開発環境のセットアップと起動](../README.md#開発環境のセットアップ)
+- [アカウントとメールの設定](../README.md#アカウントとメールの設定)
+- [AWSでの運用](../README.md#awsでの運用)
+- [主なAPI](../README.md#主なapi)
+- [開発時の確認](../README.md#開発時の確認)
 
-## Recreate the environment
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-$env:MYSQL_DATABASE = "intern_app"
-$env:MYSQL_USER = "intern_app"
-$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
-.\.venv\Scripts\python.exe manage.py migrate
-```
-
-To use `python manage.py runserver` instead, activate the virtual environment
-for the current PowerShell session first:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\.venv\Scripts\Activate.ps1
-python manage.py runserver
-```
+開発時のAPIは `http://127.0.0.1:8000/api/`、管理画面は `http://127.0.0.1:8000/admin/` です。DjangoのルートURL `/` にReactの画面はなく、メイン画面は `http://127.0.0.1:5173/` から開きます。

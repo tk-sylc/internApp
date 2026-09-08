@@ -1,351 +1,365 @@
-# 社内機器管理
+# 社内機器管理（internApp）
 
-承認済みの資産手続きを担当者が入力し、Excel管理台帳へ反映する社内向けアプリです。
+承認済みの機器に関する手続きを担当者が登録し、Excel台帳へ反映する社内向けアプリです。Excelへの転記作業を減らし、登録内容の確認・修正・取消と、その変更履歴の確認をアプリ上で行えます。
 
-## 現在採用している仕様と残しているもの
+## 目次
 
-アプリの方針変更に伴い、現在使用する機能と、互換性・既存データ保護のため残している機能を次のように分けています。
+- [目的と業務の流れ](#目的と業務の流れ)
+- [対象業務と入力内容](#対象業務と入力内容)
+- [利用者と画面の役割](#利用者と画面の役割)
+- [主な機能と使い方](#主な機能と使い方)
+- [データとExcelの扱い](#データとexcelの扱い)
+- [システム構成](#システム構成)
+- [開発環境のセットアップ](#開発環境のセットアップ)
+- [アカウントとメールの設定](#アカウントとメールの設定)
+- [AWSでの運用](#awsでの運用)
+- [主なAPI](#主なapi)
+- [開発時の確認](#開発時の確認)
 
-### 現在使用する仕様
+## 目的と業務の流れ
 
-- 社員がアプリから申請するのではなく、責任者が処理内容を資産台帳へ登録する
-- 処理区分は「購入・貸出・返却・廃棄」、機器種別は「PC・スマートフォン・LAN機器・外部記憶装置」
-- 処理区分と機器種別を除き、入力項目はすべて任意
-- 「機種・端末名」は「機種名」として一括で表示
-- 利用開始日、利用終了日、利用場所を入力項目として残し、返却では利用終了日だけ、廃棄では廃棄日だけを表示する
-- 対象者氏名・利用者氏名は重複させず「申請者氏名」に統一する
-- PCはCPU、RAM、OS・バージョン、各種ソフトウェア、Browserバージョン、ウイルス対策確認を記録する
-- スマートフォンはOS・バージョン、容量、電話番号、キャリア、セキュリティソフトを記録する
-- LAN機器は暗号方式（WPA2・WPA・その他）と入手方法（借用・購入）を記録する
-- 外部記憶装置は種類、容量、暗号化、ウイルスチェック、パターンファイルを記録する
-- 管理者が会社メールを招待し、本人が個別パスワードを設定する
-- メイン画面とDjango管理画面のログインは会社メールアドレスとパスワードだけを使用する
-- 登録責任者はログインアカウントから自動設定し、利用者は変更できない
-- 責任者の氏名・メールアドレスは登録時点の値を固定保存する
-
-### 既存データ保護のため残しているもの
-
-- 旧PC・スマートフォン・LAN・外部記憶装置申請モデルと保存済みデータ
-- 旧ステータス（申請中・承認・却下）のDB定義
-- 過去の登録に含まれる承認日
-- 旧申請APIのコード
-
-これらの旧機能は既存データを失わないためコードとDBに残していますが、現在のメイン画面とDjango管理画面には表示しません。過去の承認日もDBには保持しますが、新しい登録では使用しません。
-
-### リポジトリとブランチ
-
-- 現在の実装は `backend/` をDjangoバックエンドとして使用する
-- リポジトリ名とローカルフォルダ名の `internApp` は接続情報として残す
-- 開発内容のpush先は `開発担当者の各branch` とし、`main`は明示的な指示があるまで更新しない
-- 共同開発者の `backend/` 構成とMySQL方針を採用し、現在の認証・入力・Excel機能をその中へ統合する
-- Djangoアプリは役割を明確にするため、認証の `accounts` と機器管理の `asset_requests` に分けたまま残す
-
-## 対象にする業務フロー
+このアプリは、承認済みの申請内容を台帳へ記録する作業を担当します。社員からの申請受付と上司による承認は、社内の業務手順に沿ってアプリの外で行います。
 
 ```text
-社員が申請書を上司へ送付
-  → 上司が内容を確認
-  → 担当者が申請書を見ながら社内機器管理アプリへ必要項目を入力
-  → Djangoへ保存し、申請種別ごとのExcel台帳を自動更新
+社員が申請 → 上司が承認 → 担当者がアプリへ登録 → Excel台帳へ反映
+                                  ↓
+                         台帳の確認・修正・取消
+                                  ↓
+                         変更履歴の保存・Excel更新
 ```
 
-申請・上司承認はこのアプリの対象外です。アプリは承認後の転記作業から始まります。
+1件の登録は、1回の購入・貸出・返却・廃棄の処理を表します。担当者は承認済みの申請書などを確認しながら必要な情報を入力します。
 
-## 画面ごとの役割
+## 対象業務と入力内容
 
-社内機器管理アプリには、日常業務用の「メイン画面」と、設定・管理用の「Django管理画面」があります。
+### 処理区分
 
-| 画面 | URL | 主な利用者 | 役割 |
-| --- | --- | --- | --- |
-| メイン画面 | <http://127.0.0.1:5173/> | 登録担当者 | 購入・貸出・返却・廃棄の登録、台帳全体の閲覧、全担当者の登録の修正・取消・復元、履歴確認、最新Excelの取得 |
-| Django管理画面 | <http://127.0.0.1:8000/admin/> | 管理者 | アカウントの作成・停止と権限管理、資産台帳の参照 |
+| 処理 | 記録する内容 | 処理に応じた主な入力項目 |
+| --- | --- | --- |
+| 購入 | 機器の購入 | 数量、利用開始日・終了日、目的、利用場所 |
+| 貸出 | 保有機器の貸出 | 管理番号、数量、利用開始日・終了日、目的、利用場所 |
+| 返却 | 貸し出した機器の返却 | 管理番号、利用終了日、返却時の状態、利用場所 |
+| 廃棄 | 機器の廃棄 | 管理番号、廃棄日、廃棄理由、廃棄方法、利用場所 |
 
-普段の転記作業にはメイン画面を使います。管理画面はアカウント管理に使用します。履歴や同時編集のチェックを迂回しないよう、資産台帳の登録・修正・取消は管理者もメイン画面で行います。
+### 機器種別
 
-旧フローの「申請中・承認・却下」を持つ申請データは、既存データ保護のため削除せず保存していますが、現在の管理画面には表示しません。
+| 機器 | 主な入力項目 |
+| --- | --- |
+| PC | 機種名、CPU、RAM、OS・バージョン、各種ソフトウェアのバージョン、セキュリティソフト、ウイルス対策ソフト導入確認 |
+| スマートフォン | 機種名、容量、電話番号、キャリア名、OS・バージョン、セキュリティソフト、ウイルス対策ソフト導入確認 |
+| LAN機器 | 機器種別、機器名、入手方法、借用元、暗号方式 |
+| 外部記憶装置 | 種類、機器名、容量、暗号化ソフト、ウイルスチェック、ウイルスパターンファイル |
 
-### メイン画面の操作手順
+各フォームには、申請者氏名・所属部署・担当者メモもあります。部署は「営業部・総務部・システム部」から選択します。
+
+登録時に必須なのは処理区分と機器種別です。それ以外の項目は任意で、分かる範囲を入力できます。登録責任者はログインアカウントから自動設定されます。
+
+新規登録画面では上記4種別を選択します。台帳画面では、この4種別に加えて「その他」に分類された登録も閲覧・修正・出力できます。
+
+## 利用者と画面の役割
+
+| 利用者 | 使用する画面 | できること |
+| --- | --- | --- |
+| 担当者 | Reactのメイン画面 | 登録、台帳全体の閲覧、検索、詳細・履歴の確認、修正、取消・復元、Excelの取得、同期の再試行 |
+| 管理者 | メイン画面とDjango管理画面 | 担当者と同じ業務操作に加え、アカウント招待、利用停止、権限管理、管理画面での台帳参照 |
+
+有効な担当者アカウントは、他の担当者が登録した内容も閲覧・修正・取消・復元できます。日常業務にスタッフ権限は不要です。
+
+Django管理画面の台帳は参照専用です。管理者も登録内容の変更はメイン画面で行い、変更履歴の記録と同時編集の確認を通します。管理画面へ入るには、スタッフ権限と操作対象に応じた権限が必要です。
+
+## 主な機能と使い方
+
+### 登録する
+
+1. 会社メールアドレスとパスワードでログインします。
+2. 「購入・貸出・返却・廃棄」から処理を選びます。
+3. 機器種別を選び、申請書などを見ながら必要な項目を入力します。
+4. 確認画面で内容を確認し、登録します。
+5. 登録結果とExcelへの反映状態を確認します。
+
+保存時に受付番号と登録日時を記録し、機器種別に対応するExcel台帳を更新します。
+
+### 台帳全体を確認する
+
+「台帳を確認」から機器種別を選ぶと、Excelと同じ列構成の表を閲覧できます。検索していない状態では、その種別の有効な登録を全件表示します。列数が多い場合は横へスクロールして確認します。
+
+検索で表示を絞り込むこともできます。各登録の詳細を開くと、入力内容・登録責任者・登録日時・変更履歴を確認できます。
+
+### 登録内容を修正する
+
+登録の詳細画面で「修正する」を選び、内容を変更して保存します。他の担当者が登録した内容も修正できます。
+
+別の担当者が同じ登録を先に更新していた場合は、上書きを防ぐため保存を停止します。「最新内容を読み直す」から最新の登録を確認し、必要な修正を行ってください。
+
+### 誤登録を取り消す・復元する
+
+二重登録などは、修正画面の「誤登録の取消」から理由を入力して取り消します。取消理由は必須です。
+
+取消した登録は、通常の台帳とExcel出力から除外されます。登録内容と履歴は保持され、「取消済みも表示」から確認・復元できます。
+
+「取消」は誤って登録した記録を無効にする操作です。実際に機器を処分したことを記録する「廃棄」とは用途が異なります。
+
+### 変更履歴を確認する
+
+登録・修正・取消・復元の操作ごとに、次の情報を保存します。
+
+- 操作した担当者の氏名・メールアドレス
+- 操作日時と操作の種類
+- 変更した項目と変更前・変更後の内容
+- 取消時の理由
+
+最初の登録責任者と登録日時は、修正後も変わりません。担当者の氏名・メールアドレスは操作時点の値を保存します。履歴はアプリから編集・削除できません。
+
+## データとExcelの扱い
+
+### データの保存先
+
+登録内容・登録責任者・変更履歴・同期状態はMySQLに保存します。データベースを基準として、アプリが機器種別ごとのExcelファイルを生成します。
 
 ```text
-ログイン
-  → 購入・貸出・返却・廃棄を選択
-  → 機器種別と必要項目を入力
-  → 内容を確認してExcel台帳へ登録
+アプリで登録・修正・取消・復元
+  → データベースに内容と履歴を保存
+  → Excel台帳を生成・更新
+  → アプリで閲覧、必要に応じてダウンロード
 ```
 
-処理区分と機器種別を選択した後の入力項目は、対応できない場合を考慮してすべて任意です。分かる範囲だけ入力できます。
+Excelとの連携は、アプリからExcelへの一方向です。ダウンロードしたExcelを直接編集しても、アプリには反映されません。
 
-すべての機器で、入力欄は「機器の基本情報 → 管理番号・数量 → 利用日 → 目的・処理内容 → 利用場所 → 技術・セキュリティ確認 → 担当者メモ」の優先順位で表示します。
+### Excelの閲覧・ダウンロード
 
-## 現在の機能
+- 台帳画面は、Excelへ出力する項目と登録内容を表形式で表示します。
+- Excelダウンロードは、検索条件や取消済みの表示設定に関係なく、選択した種別の有効な登録を全件出力します。
+- ダウンロード時に最新のExcelを生成します。生成に失敗した場合、古いファイルは配布しません。
+- パソコンへダウンロード済みのファイルは自動更新されません。修正・取消後は最新のExcelを取得してください。
 
-- Djangoセッションによる担当者ログイン
-- 最初に「購入・貸出・返却・廃棄」から作業を選ぶシンプルな動線
-- PC、スマートフォン、LAN機器、外部記憶装置の種別別入力フォーム
-- 申請者氏名、機種名、利用日、目的、利用場所などを分かる範囲で入力
-- PC・スマートフォンのOS・バージョン、セキュリティソフトとウイルス対策導入確認
-- LAN機器の暗号方式と入手方法
-- 外部記憶装置の種類、容量、暗号化・ウイルスチェック情報
-- 営業部、総務部、システム部の部署選択
-- 登録前の確認画面
-- ログインアカウントから登録責任者の氏名・メールアドレスを自動表示
-- 入力内容、変更できない登録責任者、登録日時の保存
-- 機器種別ごとのExcel台帳生成（処理区分も保存）
-- 最近の登録一覧と検索
-- Django管理画面での確認
+Excelの保存先は、標準設定では `backend/approved_ledgers/` です。保存先は環境変数 `APPROVED_LEDGER_OUTPUT_DIR` で変更できます。Excelやデータベースの内容はGit管理の対象外です。
 
-## 台帳の閲覧・修正・同期
+### 同期に失敗した場合
 
-申請と承認はアプリ外で行います。担当者が承認済みの内容を登録し、データベースを正本としてExcelへ一方向に反映します。ダウンロードしたExcelの直接編集をアプリへ取り込む機能はありません。
+データベースへの保存とExcelへの書き込みは、別の処理として扱います。Excelへの反映に失敗しても、保存済みの登録内容と履歴は残ります。
 
-- 「台帳を確認」から、機器種別ごとの全件・全列を表で閲覧できます。検索を解除すると全件へ戻ります。
-- Excelダウンロードは検索条件に関係なく、その種別の有効な登録をすべて出力します。最新の生成に失敗した場合は古いファイルを配布しません。
-- アプリに招待された有効な担当者は、自分以外の担当者の登録も修正・取消・復元できます。スタッフ権限は不要です。
-- 登録責任者の氏名・メール・登録日時は保持し、操作した担当者・日時・変更前後を履歴へ追加します。履歴は画面から編集・削除できません。
-- 同じ登録を別の人が先に更新していた場合は409で保存を拒否し、最新内容の再読込を求めます。
-- 取消は物理削除しません。理由と履歴を保持して通常の台帳・Excelから除外し、取消済み表示から復元できます。機器の「廃棄」とは別の操作です。
-- DB保存とExcelの書込は別の処理です。Excel更新に失敗しても登録自体は残り、未反映を表示して同期だけ再試行できます。
-- すでにPCへダウンロードしたコピーは更新・取消されません。最新のExcelを再取得してください。
+台帳画面で「Excelに未反映の内容があります」と表示された場合は、保存内容を確認してから「同期を再試行」を実行します。同じ内容を再登録する必要はありません。
 
-過去の登録を移行時に削除・作り直すことはありません。機能導入前の変更履歴は復元できないため、導入後の操作から履歴を記録します。
+## システム構成
 
-AWSへの反映方法は [台帳機能の更新手順](docs/ledger-workflow.md) を参照してください。
+| 要素 | 使用技術 | 役割 |
+| --- | --- | --- |
+| フロントエンド | React、Vite | 担当者向けの入力・台帳・履歴画面 |
+| バックエンド | Django、Django REST Framework | セッション認証、登録処理、履歴管理、API |
+| データベース | MySQL | アカウント、登録内容、履歴、同期状態の保存 |
+| Excel生成 | openpyxl | 機器種別ごとの `.xlsx` ファイルの生成 |
+| AWS実行環境 | EC2、Ubuntu、Gunicorn、Nginx、systemd | アプリの実行、画面・APIの配信、プロセス管理 |
 
-## 構成
+### ディレクトリ構成
 
-- `src/`: Reactの担当者画面
-- `backend/accounts/`: ログイン・アカウント管理
-- `backend/asset_requests/`: 承認済み手続きとExcel出力API
-- `backend/approved_ledgers/`: 生成したExcel（Git管理外）
-
-旧「社員がアプリから申請する」実装は、元の `tk-sylc/sylc` リポジトリへ統合済みです。`internApp` の復元用ブランチ `archive/asset-request-portal` にも切り替え前の状態を保存しています。
-
-## アカウントの作成と権限
-
-現在は、メイン画面から利用者自身がアカウントを作る方式ではありません。管理者がDjango管理画面から、必要な担当者のアカウントを発行します。
-
-### 最初の管理者を作る
-
-```powershell
-cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\backend
-.\.venv\Scripts\python.exe manage.py createsuperuser
+```text
+internApp/
+├─ src/                         # Reactの画面とAPI呼び出し
+│  ├─ App.jsx                   # ログイン、ホーム、登録フォーム
+│  ├─ LedgerWorkspace.jsx       # 台帳、詳細、修正、取消、履歴
+│  └─ formConfig.js             # 処理区分、機器種別、入力項目
+├─ backend/
+│  ├─ accounts/                 # アカウント招待、認証、プロフィール
+│  ├─ asset_requests/           # 台帳データ、変更履歴、Excel連携
+│  ├─ config/                   # Django設定とURL定義
+│  ├─ approved_ledgers/         # 生成したExcel（Git管理外）
+│  └─ requirements.txt          # Pythonの依存ライブラリ
+├─ docs/                        # 運用手順
+├─ scripts/                     # 環境構築用スクリプト
+├─ package.json                 # フロントエンドの依存関係とコマンド
+└─ vite.config.js               # 開発サーバーとAPI転送の設定
 ```
 
-画面の案内に従って、内部管理用ユーザー名、メールアドレス、パスワードを入力します。作成後の管理画面ログインではユーザー名を使わず、会社メールアドレスとパスワードを入力します。
+## 開発環境のセットアップ
 
-### 担当者のアカウントを作る
+以下はWindowsのPowerShellで、リポジトリのルートフォルダから作業する手順です。
 
-Djangoを起動するPowerShellで、最初に会社メールのドメインを設定します。`example.co.jp`は実際の会社ドメインに置き換えてください。
+### 必要なもの
 
-```powershell
-$env:COMPANY_EMAIL_DOMAINS = "example.co.jp"
-.\.venv\Scripts\python.exe manage.py runserver
-```
+- Python 3.12以降
+- Node.js 24系とnpm
+- MySQL Server 8.4
+- Git
 
-1. Django管理画面 <http://127.0.0.1:8000/admin/> を開く
-2. 管理者アカウントでログインする
-3. 「アカウント招待」を開く
-4. 「アカウント招待を追加」を押す
-5. 会社メールアドレス、氏名、部署を入力して保存する
-6. 本人へ届いた招待リンクから、本人専用のパスワードを設定してもらう
-7. 本人が会社メールアドレスと設定したパスワードでメイン画面へログインする
+Pythonの依存バージョンは [backend/requirements.txt](backend/requirements.txt)、フロントエンドの依存関係は [package.json](package.json) と `package-lock.json` で管理しています。
 
-利用者がメイン画面から自由にアカウントを作ることはできません。管理者が招待した会社メールアドレスだけが利用できます。パスワードを忘れた場合は、ログイン画面の「パスワードを忘れた方」から本人が再設定できます。
+### 1. データベースを準備する
 
-招待メールを再送する場合は、管理画面の「アカウント招待」一覧で対象を選択し、「選択した招待メールを再送する」を実行します。退職などで利用を停止する場合は、「ユーザー」で対象者の「有効」のチェックを外します。
-
-通常の担当者にスタッフ権限は付けません。管理画面を使う担当者にだけ「スタッフ権限」と必要な権限を付与し、すべてを管理する人だけをスーパーユーザーにしてください。
-
-### 開発中のメール確認
-
-初期設定では、メール本文が実際には送信されず、Djangoを起動しているPowerShellに表示されます。表示された `http://127.0.0.1:5173/#/activate-account?...` をブラウザで開くと初回パスワードを設定できます。本番運用ではSMTPサーバーの設定が必要です。
-
-## セットアップ
-
-PythonとMySQL Serverをインストールします。
-
-### WindowsでMySQLを自動設定する場合
-
-MySQL Server 8.4をインストールしたあと、管理者として開いたPowerShellでリポジトリ直下から実行します。
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\setup_mysql.ps1
-```
-
-このスクリプトは `MySQL84` Windowsサービス、`intern_app` データベース、アプリ専用ユーザーを作成し、DjangoのマイグレーションとSQLiteデータ移行を実行します。ランダム生成した接続情報は現在のWindowsユーザーの環境変数へ保存し、Gitには保存しません。
-
-MySQL管理者パスワードが必要な場合は、次のコマンドで現在のWindowsユーザーに保存された値を確認できます。画面共有中などに表示しないでください。
-
-```powershell
-[Environment]::GetEnvironmentVariable("INTERNAPP_MYSQL_ROOT_PASSWORD", "User")
-```
-
-### 手動でMySQLを設定する場合
-
-MySQLへ管理者で接続し、開発用のデータベースと専用ユーザーを作成します。
+MySQLに管理者として接続し、開発用データベースとアプリ専用ユーザーを作成します。パスワードの例は、自分で決めた値へ置き換えてください。
 
 ```sql
 CREATE DATABASE intern_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'intern_app'@'localhost' IDENTIFIED BY '任意の強いパスワード';
+CREATE USER 'intern_app'@'localhost' IDENTIFIED BY 'アプリ専用のMySQLパスワード';
 GRANT ALL PRIVILEGES ON intern_app.* TO 'intern_app'@'localhost';
-FLUSH PRIVILEGES;
 ```
 
-次にPowerShellでバックエンドを準備します。
+すでにデータベースとユーザーがある場合は、その接続情報を使います。
+
+### 2. バックエンドを準備する
 
 ```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+$env:DATABASE_ENGINE = "mysql"
 $env:MYSQL_DATABASE = "intern_app"
 $env:MYSQL_USER = "intern_app"
-$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
+$env:MYSQL_PASSWORD = "アプリ専用のMySQLパスワード"
 $env:MYSQL_HOST = "127.0.0.1"
 $env:MYSQL_PORT = "3306"
+$env:COMPANY_EMAIL_DOMAINS = "example.co.jp"
+$env:FRONTEND_BASE_URL = "http://127.0.0.1:5173"
+
 .\.venv\Scripts\python.exe manage.py migrate
 .\.venv\Scripts\python.exe manage.py createsuperuser
+.\.venv\Scripts\python.exe manage.py sync_approved_ledgers
 ```
 
-MySQLの接続情報はターミナルを開き直すと消えます。開発中はDjangoを起動するPowerShellで毎回設定してください。パスワードはREADMEやGitへ書き込みません。
+`example.co.jp` は実際に招待を許可する会社ドメインに置き換えます。複数の場合はカンマで区切ります。
 
-フロントエンドを準備します。
+`createsuperuser` では、内部管理用ユーザー名・メールアドレス・パスワードを設定します。ログインに使うのはメールアドレスとパスワードです。`sync_approved_ledgers` は、登録内容に対応するExcel台帳を生成します。
+
+`.venv` は、このアプリ専用のPython環境です。上記のように `.venv` 内のPythonを指定すれば、仮想環境の有効化操作を省略できます。
+
+### 3. フロントエンドを準備する
+
+別のPowerShellをリポジトリのルートフォルダで開き、実行します。
 
 ```powershell
-cd ..
-npm.cmd install
+npm.cmd ci
 ```
 
-## 起動
+### 4. アプリを起動する
 
-1つ目のPowerShell:
+バックエンドを準備したPowerShellで、`backend/` から実行します。
 
 ```powershell
-cd backend
-$env:MYSQL_DATABASE = "intern_app"
-$env:MYSQL_USER = "intern_app"
-$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
 .\.venv\Scripts\python.exe manage.py runserver
 ```
 
-2つ目のPowerShell:
+フロントエンドを準備したPowerShellで、リポジトリのルートフォルダから実行します。
 
 ```powershell
 npm.cmd run dev
 ```
 
-- アプリ: <http://127.0.0.1:5173/>
-- Django管理画面: <http://127.0.0.1:8000/admin/>
+| 画面 | 開発用URL |
+| --- | --- |
+| メイン画面 | <http://127.0.0.1:5173/> |
+| Django管理画面 | <http://127.0.0.1:8000/admin/> |
 
-## Pythonと仮想環境の役割
+Viteが `/api/` へのアクセスをDjangoの `127.0.0.1:8000` へ転送します。DjangoのルートURL `/` にはReactの画面はありません。終了するときは、各ターミナルで `Ctrl+C` を押します。
 
-このプロジェクトでは、`.venv` というinternApp専用のPython環境を使用します。Django REST Frameworkやopenpyxlなど、internAppに必要なライブラリはこの中に入っています。
+`$env:` で設定した値は、そのPowerShellでのみ有効です。新しいターミナルでDjangoを起動する場合は、手順2の環境変数を設定し直してください。接続パスワードや本番用の秘密設定は、ソースコードやGitへ保存しません。
 
-仮想環境を有効化せずに `python manage.py runserver` を実行すると、PC全体のPythonが使われ、`rest_framework` などが見つからないことがあります。通常は次のコマンドを使用してください。
+## アカウントとメールの設定
 
-```powershell
-.\.venv\Scripts\python.exe manage.py runserver
-```
+### 担当者を招待する
 
-先に仮想環境を有効化する方法もあります。
+1. 管理者がDjango管理画面へログインします。
+2. 「アカウント招待」で、会社メールアドレス・氏名・部署を登録します。
+3. 本人が招待リンクを開き、自分のパスワードを設定します。
+4. 会社メールアドレスと設定したパスワードで、メイン画面へログインします。
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
-.\.venv\Scripts\Activate.ps1
-python manage.py runserver
-```
+担当者の利用開始は管理者による招待で行います。`COMPANY_EMAIL_DOMAINS` が未設定の場合や、許可していないドメインのメールアドレスでは招待できません。
 
-ターミナルの先頭に `(.venv)` と表示されていれば、`python` だけでinternApp専用環境が使われます。サーバーを終了するときは `Ctrl+C` を押します。
+招待の再送は、「アカウント招待」一覧の「選択した招待メールを再送する」から行います。利用を停止する場合は、「ユーザー」で対象アカウントの「有効」を外します。パスワードの再設定は、ログイン画面の「パスワードを忘れた方」から本人が行えます。
 
-## データベースとExcelの保存場所
+通常の担当者にスタッフ権限は不要です。管理画面の利用者には必要な権限を割り当て、全権限が必要な管理者だけをスーパーユーザーにします。操作履歴で本人を識別するため、アカウントは個人ごとに使用します。
 
-- 通常使用するデータベース: MySQLの `intern_app`
-- 移行前のローカルデータ: `backend/db.sqlite3`（保護のため当面残す・Git管理外）
-- 生成したExcel台帳: `backend/approved_ledgers/`（Git管理外）
+### メール送信の設定
 
-Excelは登録・修正・取消・復元の後に、機器種別ごとに生成・更新されます。データベースとExcelはGitHubへpushされません。
+標準設定では、メール本文と招待・再設定リンクをDjangoの起動ターミナルへ出力します。実際にメールを送る場合は、Djangoを起動する環境でSMTPを設定します。
 
-### 旧SQLiteデータをMySQLへ移す場合
+| 環境変数 | 用途・標準値 |
+| --- | --- |
+| `COMPANY_EMAIL_DOMAINS` | 招待を許可する会社ドメイン。カンマ区切り。標準では未設定 |
+| `FRONTEND_BASE_URL` | メール内のリンク先。標準は `http://127.0.0.1:5173` |
+| `DJANGO_MAILER_BACKEND` | SMTP使用時は `django.core.mail.backends.smtp.EmailBackend` を指定 |
+| `SMTP_HOST` | SMTPサーバー。SMTP使用時に必須 |
+| `SMTP_PORT` | SMTPポート。標準は `587` |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | SMTP認証情報 |
+| `SMTP_USE_TLS` / `SMTP_USE_SSL` | 暗号化方式。標準はそれぞれ `true` / `false`。利用するサーバーに合わせて設定 |
+| `DEFAULT_FROM_EMAIL` | 送信元メールアドレス。実際に送信可能なアドレスを設定 |
 
-まずSQLiteを明示してデータを書き出します。
+## AWSでの運用
 
-```powershell
-cd backend
-$env:DATABASE_ENGINE = "sqlite"
-$env:PYTHONUTF8 = "1"
-.\.venv\Scripts\python.exe manage.py dumpdata --natural-foreign --natural-primary --exclude contenttypes --exclude auth.permission --exclude sessions --exclude admin.logentry --indent 2 --output sqlite-data.json
-```
+AWSでは、東京リージョンのEC2上でアプリとMySQLを実行します。NginxがReactのビルドファイルを配信し、APIと管理画面へのアクセスをGunicorn経由でDjangoへ渡します。
 
-次に、同じPowerShellでMySQLへ切り替えて移行します。
+| 項目 | EC2上の設定 |
+| --- | --- |
+| アプリの配置先 | `/home/ubuntu/internApp` |
+| Djangoの運用設定 | `backend/config/production_settings.py` |
+| 接続情報などの環境変数 | `/etc/intern-app/backend.env` |
+| アプリのサービス | `intern-app.service` |
+| フロントエンドの配信先 | `/var/www/intern-app/frontend` |
+| Djangoの静的ファイル | `/var/www/intern-app/static` |
+| Nginxの受付先 | `127.0.0.1:8080` |
+| Gunicornの受付先 | `127.0.0.1:8001` |
 
-```powershell
-$env:DATABASE_ENGINE = "mysql"
-$env:MYSQL_DATABASE = "intern_app"
-$env:MYSQL_USER = "intern_app"
-$env:MYSQL_PASSWORD = "MySQLで設定したパスワード"
-.\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py loaddata sqlite-data.json
-```
+EC2の設定と秘密情報は、運用環境側で管理します。`production_settings.py` はEC2に個別配置するファイルで、リポジトリには含まれません。
 
-移行が確認できるまでは `backend/db.sqlite3` を削除しないでください。
+閲覧にはSSHポート転送を使用します。手元の `18000` 番ポートをEC2の `127.0.0.1:8080` へ転送している間は、メイン画面を <http://127.0.0.1:18000/>、管理画面を <http://127.0.0.1:18000/admin/> で開けます。これらは接続したパソコン内のURLです。
 
-## よくあるエラー
+コードをGitHubへpushするだけでは、AWSは更新されません。運用環境への反映では、バックアップ、コード取得、必要な依存関係・DBの更新、画面のビルドと配置、サービス再起動、稼働確認を行います。手順の詳細は [台帳の運用・更新手順](docs/ledger-workflow.md) を参照してください。
 
-### `No module named 'rest_framework'`
-
-PC全体のPythonを使っている可能性があります。次を実行します。
-
-```powershell
-.\.venv\Scripts\python.exe manage.py runserver
-```
-
-### `can't open file ... manage.py`
-
-現在いるフォルダが違います。移動してから起動します。
-
-```powershell
-cd C:\Users\sylc0277\Desktop\sylc_intern\internApp\backend
-.\.venv\Scripts\python.exe manage.py runserver
-```
-
-### `KeyboardInterrupt`
-
-起動中に `Ctrl+C` などで処理を中断したことを表します。Djangoのコードエラーではありません。もう一度起動し、`Starting development server` と表示されるまで待ちます。
+データベースには登録内容だけでなくアカウントと変更履歴も含まれます。Excel出力とコードのGit管理だけでは、これらを復元できないため、データベースと運用設定を含めてバックアップします。
 
 ## 主なAPI
 
+メイン画面はDjangoセッションを利用します。台帳APIは有効なアカウントでのログインが必要で、`POST`・`PATCH` にはCSRFトークンを送信します。
+
 | メソッド | URL | 用途 |
 | --- | --- | --- |
-| `GET` | `/api/auth/session/` | ログイン状態とCSRF Cookie取得 |
+| `GET` | `/api/auth/session/` | ログイン状態の確認、CSRF Cookieの取得 |
 | `POST` | `/api/auth/login/` | ログイン |
 | `POST` | `/api/auth/logout/` | ログアウト |
-| `GET` | `/api/approved-applications/` | 登録履歴一覧 |
-| `POST` | `/api/approved-applications/` | 転記内容の登録 |
-| `GET` / `PATCH` | `/api/approved-applications/<id>/` | 詳細・履歴の取得 / revision付き修正 |
-| `POST` | `/api/approved-applications/<id>/cancel/` | revision・reason付き取消 |
-| `POST` | `/api/approved-applications/<id>/restore/` | revision付き復元 |
-| `GET` | `/api/ledgers/` | 台帳一覧・同期状態 |
-| `GET` | `/api/ledgers/<type>/` | Excelと同じ列・全件の台帳 |
-| `POST` | `/api/ledgers/<type>/sync/` | DBを正本にExcelを再生成 |
-| `GET` | `/api/ledgers/<type>/download/` | 最新の台帳全体をExcelで取得 |
+| `GET` | `/api/approved-applications/` | 登録一覧の取得 |
+| `POST` | `/api/approved-applications/` | 登録内容の保存とExcel同期 |
+| `GET` | `/api/approved-applications/<id>/` | 登録詳細と変更履歴の取得 |
+| `PATCH` | `/api/approved-applications/<id>/` | 登録内容の修正 |
+| `POST` | `/api/approved-applications/<id>/cancel/` | 登録の取消 |
+| `POST` | `/api/approved-applications/<id>/restore/` | 登録の復元 |
+| `GET` | `/api/ledgers/` | 種別ごとの件数・同期状態の取得 |
+| `GET` | `/api/ledgers/<type>/` | 台帳の全列・全件の取得 |
+| `POST` | `/api/ledgers/<type>/sync/` | Excel同期の再試行 |
+| `GET` | `/api/ledgers/<type>/download/` | 最新Excelのダウンロード |
 
-## テスト
+`<type>` は `pc`・`phone`・`lan`・`memory`・`other` です。登録一覧と台帳の取得では、`include_cancelled=1` を指定すると取消済みの登録も取得できます。
+
+修正・取消・復元では、取得した登録の `revision` を送信します。保存済みの版番号と一致しない場合は `409 Conflict` を返します。取消には、理由を表す `reason` も必要です。
+
+## 開発時の確認
+
+### フロントエンド
+
+リポジトリのルートフォルダで実行します。
 
 ```powershell
-cd backend
-.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run --settings=config.test_settings
-.\.venv\Scripts\python.exe manage.py check --settings=config.test_settings
-.\.venv\Scripts\python.exe manage.py test accounts asset_requests --settings=config.test_settings
-```
-
-```powershell
-cd ..
 npm.cmd run lint
 npm.cmd run build
 ```
 
-## 次の実装候補
+### バックエンド
 
-1. 実際の申請書とExcel台帳の列名を確定する
-2. 担当者が原本と照合しやすい入力順へ調整する
-3. 既存Excelの書式・保存場所に合わせて出力方式を調整する
+リポジトリのルートフォルダから実行します。
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe manage.py check --settings=config.test_settings
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run --settings=config.test_settings
+.\.venv\Scripts\python.exe manage.py test accounts asset_requests --settings=config.test_settings
+```
+
+`config.test_settings` はメモリ上のSQLiteを使用し、通常のMySQLデータベースから分離してテストします。MySQLの行ロックや別プロセスからの同時更新のテストは、MySQLの専用テスト環境で確認します。
+
+### よくある起動時の問題
+
+| 状況 | 確認すること |
+| --- | --- |
+| `No module named 'rest_framework'` など | `.venv` 内のPythonを使っているか、`requirements.txt` のインストールが済んでいるか |
+| `manage.py` が見つからない | `backend/` に移動しているか |
+| MySQLへ接続できない | MySQLが起動しているか、接続先・ユーザー・パスワードを起動中のターミナルへ設定したか |
+| 招待メールが届かない | 開発用のターミナル出力になっていないか、SMTPと送信元の設定が正しいか |
+| Excelが未反映のまま | 台帳画面の同期結果、保存先への書き込み権限、空き容量を確認して再試行する |
