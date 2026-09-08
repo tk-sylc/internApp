@@ -34,3 +34,7 @@ media/
 *.njsproj
 *.sln
 *.sw?
+
+# Generated documents and temporary verification files
+output/
+tmp/

@@ -221,6 +221,10 @@ class ApprovedApplication(models.Model):
     created_at = models.DateTimeField("登録日時", auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField("更新日時", auto_now=True)
 
+    revision = models.PositiveIntegerField("版番号", default=1, editable=False)
+    is_cancelled = models.BooleanField("取消済み", default=False, db_index=True)
+    cancellation_reason = models.TextField("取消理由", blank=True)
+
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "資産台帳登録"
@@ -235,3 +239,50 @@ class ApprovedApplication(models.Model):
 
     def __str__(self):
         return f"{self.reference_number} {self.applicant_name}"
+
+
+class ApprovedApplicationHistory(models.Model):
+    """Immutable snapshots of actions taken through the ledger workflow."""
+
+    class Action(models.TextChoices):
+        CREATE = "create", "登録"
+        UPDATE = "update", "修正"
+        CANCEL = "cancel", "取消"
+        RESTORE = "restore", "復元"
+
+    application = models.ForeignKey(
+        ApprovedApplication, on_delete=models.PROTECT, related_name="history",
+    )
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    actor_name = models.CharField(max_length=150)
+    actor_email = models.EmailField(blank=True)
+    action = models.CharField(max_length=10, choices=Action.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    changes = models.JSONField(default=list)
+    reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        verbose_name = "台帳の変更履歴"
+        verbose_name_plural = "台帳の変更履歴"
+
+
+class ApprovedLedgerState(models.Model):
+    """A persistent per-ledger mutex and synchronization status."""
+
+    class State(models.TextChoices):
+        PENDING = "pending", "Excel未反映"
+        SYNCED = "synced", "反映済み"
+        ERROR = "error", "同期失敗"
+
+    application_type = models.CharField(
+        max_length=20, primary_key=True,
+        choices=ApprovedApplication.ApplicationType.choices,
+    )
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PENDING)
+    generation = models.PositiveBigIntegerField(default=0)
+    synced_generation = models.PositiveBigIntegerField(default=0)
+    synced_at = models.DateTimeField(null=True, blank=True)
+    error = models.TextField(blank=True)

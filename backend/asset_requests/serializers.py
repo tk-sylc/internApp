@@ -216,6 +216,7 @@ class SmartphoneRequestSerializer(BaseAssetRequestSerializer):
 
 
 class ApprovedApplicationSerializer(serializers.ModelSerializer):
+    history = serializers.SerializerMethodField()
     reference_number = serializers.CharField(read_only=True)
     entered_by_name = serializers.SerializerMethodField()
     entered_by_email = serializers.SerializerMethodField()
@@ -234,6 +235,11 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "entered_by_name",
             "entered_by_email",
             "created_at",
+            "updated_at",
+            "revision",
+            "is_cancelled",
+            "cancellation_reason",
+            "history",
         ]
         read_only_fields = [
             "id",
@@ -241,6 +247,11 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "entered_by_name",
             "entered_by_email",
             "created_at",
+            "updated_at",
+            "revision",
+            "is_cancelled",
+            "cancellation_reason",
+            "history",
         ]
         extra_kwargs = {
             "applicant_name": {"required": False, "allow_blank": True},
@@ -248,6 +259,19 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "details": {"required": False},
             "notes": {"required": False, "allow_blank": True},
         }
+
+    def get_history(self, obj):
+        if not self.context.get("include_history"):
+            return []
+        return [
+            {
+                "id": item.pk, "action": item.action,
+                "actor_name": item.actor_name, "actor_email": item.actor_email,
+                "created_at": item.created_at.isoformat(),
+                "changes": item.changes, "reason": item.reason,
+            }
+            for item in obj.history.all()
+        ]
 
     def get_entered_by_name(self, obj):
         if obj.entered_by_name:
@@ -262,7 +286,7 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
         return obj.entered_by_email or obj.entered_by.email
 
     def validate_department(self, value):
-        if value == "":
+        if value == "" or (self.instance is not None and value == self.instance.department):
             return value
         allowed = {"営業部", "総務部", "システム部"}
         if value not in allowed:
@@ -270,9 +294,9 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        application_type = attrs.get("application_type")
-        operation_type = attrs.get("operation_type")
-        details = attrs.get("details", {})
+        application_type = attrs.get("application_type", getattr(self.instance, "application_type", None))
+        operation_type = attrs.get("operation_type", getattr(self.instance, "operation_type", None))
+        details = attrs.get("details", getattr(self.instance, "details", {}))
         type_fields = APPROVED_TYPE_DETAIL_FIELDS.get(application_type)
         operation_fields = APPROVED_OPERATION_DETAIL_FIELDS.get(operation_type)
 
@@ -285,19 +309,39 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
 
         expected_fields = type_fields | operation_fields | APPROVED_COMMON_DETAIL_FIELDS
 
-        cleaned_details = {
-            key: value
-            for key, value in details.items()
-            if key in expected_fields and value not in (None, "")
-        }
+        # Preserve historical fields on edit; a type change must not silently
+        # erase legacy data. The UI may explicitly clear a field with "".
+        if self.instance is not None:
+            cleaned_details = dict(self.instance.details)
+            if "details" in attrs:
+                for key, value in details.items():
+                    if value in (None, ""):
+                        cleaned_details.pop(key, None)
+                    else:
+                        cleaned_details[key] = value
+        else:
+            cleaned_details = {
+                key: value for key, value in details.items()
+                if key in expected_fields and value not in (None, "")
+            }
+            if operation_type == "return":
+                cleaned_details.pop("usage_start_date", None)
+            elif operation_type == "disposal":
+                cleaned_details.pop("usage_start_date", None)
+                cleaned_details.pop("usage_end_date", None)
 
-        # 返却では終了日のみを扱い、過去の画面や直接APIから送られた
-        # 利用開始日は保存しない。
-        if operation_type == "return":
-            cleaned_details.pop("usage_start_date", None)
-        elif operation_type == "disposal":
-            cleaned_details.pop("usage_start_date", None)
-            cleaned_details.pop("usage_end_date", None)
+        for key, value in cleaned_details.items():
+            if not isinstance(key, str) or len(key) > 100:
+                raise serializers.ValidationError({"details": "項目名が長すぎます。"})
+            if isinstance(value, (dict, list)):
+                # Existing nested historical values remain readable, but new
+                # structured values cannot enter string-based form fields.
+                if self.instance is None or self.instance.details.get(key) != value:
+                    raise serializers.ValidationError({"details": "各項目には文字・数値を入力してください。"})
+            elif not isinstance(value, (str, int, float, bool)):
+                raise serializers.ValidationError({"details": "転記項目の形式が不正です。"})
+            elif isinstance(value, str) and len(value) > 10000:
+                raise serializers.ValidationError({"details": "各項目は10000文字以内にしてください。"})
 
         attrs["details"] = cleaned_details
         return attrs

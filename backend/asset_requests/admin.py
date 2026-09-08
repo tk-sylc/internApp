@@ -6,6 +6,7 @@ from django.core.paginator import Paginator
 from django.http import FileResponse, Http404
 from django.urls import path, reverse
 from django.template.response import TemplateResponse
+from django.utils.html import format_html
 from openpyxl import load_workbook
 
 from accounts.models import UserProfile
@@ -155,8 +156,10 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
         "entered_by_name",
         "entered_by_email",
         "created_at",
+        "is_cancelled",
     )
     list_filter = (
+        "is_cancelled",
         "operation_type",
         "application_type",
         "department",
@@ -271,12 +274,22 @@ class ApprovedApplicationAdmin(admin.ModelAdmin):
             filename=FILE_NAMES[application_type],
         )
 
-    def save_model(self, request, obj, form, change):
-        if not change and not obj.entered_by_id:
-            obj.entered_by = request.user
-            try:
-                obj.entered_by_name = request.user.profile.display_name.strip()
-            except UserProfile.DoesNotExist:
-                obj.entered_by_name = request.user.email or request.user.get_username()
-            obj.entered_by_email = request.user.email
-        super().save_model(request, obj, form, change)
+    # All business mutations go through the operator workflow so revision
+    # checks, audit snapshots and Excel synchronization cannot be bypassed.
+    actions = None
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        return ("reference_number", "workflow_link", *(field.name for field in self.model._meta.fields))
+
+    @admin.display(description="登録内容の修正・取消")
+    def workflow_link(self, obj):
+        return format_html('<a href="{}">メイン画面の台帳から操作してください</a>', '/')
