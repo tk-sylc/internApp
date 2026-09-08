@@ -14,13 +14,13 @@
 
 この変更はDB項目と履歴・同期状態のテーブルを追加します。コードの更新だけでは動きません。DBのバックアップとマイグレーションが必要です。既存のDjango 6.1・MySQL 8.4・Gunicorn・Nginxを使用します。
 
-開発ブランチは `feature/ledger-workflow` です。`main`へ直接反映せず、チームでレビュー対象のコミットを確認します。本書を作成した時点でAWSへの自動反映はしていません。
+開発ブランチは `feature/ledger-workflow` です。確認・承認後に `main`へ統合し、AWSへ反映します。GitHubへのpushだけでAWSが自動更新される仕組みはありません。
 
 EC2上で手作業した `backend/config/production_settings.py`、`/etc/intern-app/backend.env`、systemd・Nginxの設定は保持してください。秘密キー・パスワードをGitへ入れないでください。`git status`で既存の変更を確認し、上書き・強制リセットは行いません。
 
 ## EC2での反映
 
-利用者が操作していない時間に実施します。次は会話で設定した `/home/ubuntu/internApp`、`intern-app.service`、`/etc/intern-app/backend.env` を前提とした手順です。変更ブランチがGitHubへpush済みであることを先に確認してください。
+利用者が操作していない時間に実施します。次は会話で設定した `/home/ubuntu/internApp`、`intern-app.service`、`/etc/intern-app/backend.env` を前提とした手順です。反映する変更がGitHubのmainへpush済みであることを先に確認してください。
 
 ### 1. バックアップ
 
@@ -38,13 +38,14 @@ git status --short
 git fetch origin
 ```
 
-チームで確認したブランチを選びます。EC2に同名ブランチがなければ以下です。
+承認済みのmainを取得します。
 
 ```bash
-git switch --track origin/feature/ledger-workflow
+git switch main
+git pull --ff-only
 ```
 
-すでに同ブランチの場合は `git pull --ff-only` で取得します。ブランチの切替時にローカル変更の警告が出たら、強制せず内容を確認します。
+ブランチの切替・取得時にローカル変更の警告が出たら、強制せず内容を確認します。
 
 ```bash
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
