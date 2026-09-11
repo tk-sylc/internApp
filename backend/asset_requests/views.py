@@ -16,6 +16,7 @@ from .approved_ledger_sync import (
     lock_ledgers, sync_approved_ledger, sync_status,
 )
 from .approved_workflow import create_application, change_application
+from .equipment_history import equipment_history
 from .ledger_sync import sync_ledger
 from .models import (
     ApprovedApplication,
@@ -128,12 +129,19 @@ def _record_response(record, synced=None, status=200):
     return Response(result, status=status)
 
 
+class EquipmentHistoryView(NoStoreResponseMixin, APIView):
+    permission_classes = [ActiveOperatorPermission]
+
+    def get(self, request):
+        return Response(equipment_history(request.query_params))
+
+
 class ApprovedApplicationListCreateView(NoStoreResponseMixin, generics.ListCreateAPIView):
     permission_classes = [ActiveOperatorPermission]
     serializer_class = ApprovedApplicationSerializer
 
     def get_queryset(self):
-        queryset = ApprovedApplication.objects.select_related("entered_by__profile")
+        queryset = ApprovedApplication.objects.select_related("entered_by__profile", "source_application", "related_loan")
         if self.request.query_params.get("include_cancelled") != "1":
             queryset = queryset.filter(is_cancelled=False)
         return queryset
@@ -141,7 +149,10 @@ class ApprovedApplicationListCreateView(NoStoreResponseMixin, generics.ListCreat
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        record = create_application(serializer, request.user)
+        from rest_framework.serializers import UUIDField
+        raw_key = request.headers.get("Idempotency-Key")
+        request_id = UUIDField().run_validation(raw_key) if raw_key is not None else None
+        record = create_application(serializer, request.user, request_id=request_id)
         return _record_response(record, _sync_types({record.application_type}), status=201)
 
 
@@ -149,7 +160,7 @@ class ApprovedApplicationDetailView(NoStoreResponseMixin, APIView):
     permission_classes = [ActiveOperatorPermission]
 
     def get(self, request, pk):
-        record = get_object_or_404(ApprovedApplication.objects.select_related("entered_by__profile"), pk=pk)
+        record = get_object_or_404(ApprovedApplication.objects.select_related("entered_by__profile", "source_application", "related_loan"), pk=pk)
         return _record_response(record)
 
     def patch(self, request, pk):

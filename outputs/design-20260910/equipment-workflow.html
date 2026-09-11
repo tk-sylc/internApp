@@ -1,0 +1,107 @@
+<div id="equipment-proposal" aria-label="資産台帳の画面案">
+  <style>
+    #equipment-proposal { --eq-bg:light-dark(#ffffff,#202225); --eq-text:light-dark(#24282d,#eceef0); --eq-muted:light-dark(#626b74,#bac1c9); --eq-line:light-dark(#dadddf,#4b5159); --eq-soft:light-dark(#f5f6f7,#2b2f34); --eq-accent:light-dark(#315f85,#a0c4e3); --eq-on:light-dark(#ffffff,#1d2832); color:var(--eq-text); background:var(--eq-bg); font-family:"Yu Gothic UI","Meiryo",system-ui,sans-serif; font-size:14px; line-height:1.55; border:1px solid var(--eq-line); border-radius:4px; overflow:hidden; }
+    #equipment-proposal * { box-sizing:border-box; }
+    #equipment-proposal [hidden] { display:none !important; }
+    #equipment-proposal button,#equipment-proposal input,#equipment-proposal select,#equipment-proposal textarea { font:inherit; }
+    #equipment-proposal button { cursor:pointer; }
+    #equipment-proposal header { display:flex; flex-wrap:wrap; align-items:center; gap:12px 28px; padding:16px 24px; border-bottom:1px solid var(--eq-line); }
+    #equipment-proposal header strong { font-size:17px; font-weight:500; }
+    #equipment-proposal nav { display:flex; gap:22px; }
+    #equipment-proposal nav button { border:0; padding:4px 0; color:var(--eq-muted); background:transparent; border-bottom:2px solid transparent; }
+    #equipment-proposal nav button[aria-current="page"] { color:var(--eq-text); border-bottom-color:var(--eq-accent); }
+    #equipment-proposal .eq-user { margin-left:auto; color:var(--eq-muted); }
+    #equipment-proposal main { padding:24px; }
+    #equipment-proposal .eq-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
+    #equipment-proposal h1 { font-size:22px; font-weight:500; margin:0; }
+    #equipment-proposal h2 { font-size:16px; font-weight:500; margin:0 0 14px; }
+    #equipment-proposal p { margin:6px 0; }
+    #equipment-proposal .eq-sub { color:var(--eq-muted); }
+    #equipment-proposal .eq-button { min-height:36px; padding:6px 13px; border:1px solid var(--eq-line); border-radius:3px; background:var(--eq-bg); color:var(--eq-text); }
+    #equipment-proposal .eq-primary { border-color:var(--eq-accent); background:var(--eq-accent); color:var(--eq-on); }
+    #equipment-proposal .eq-link { padding:4px 0; border:0; background:transparent; color:var(--eq-accent); text-decoration:underline; text-underline-offset:3px; }
+    #equipment-proposal .eq-toolbar { display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin-bottom:16px; }
+    #equipment-proposal label { display:grid; gap:6px; color:var(--eq-text); }
+    #equipment-proposal .eq-search { flex:1 1 260px; max-width:430px; }
+    #equipment-proposal input,#equipment-proposal select,#equipment-proposal textarea { width:100%; padding:8px 10px; border:1px solid var(--eq-line); border-radius:3px; background:var(--eq-bg); color:var(--eq-text); }
+    #equipment-proposal input:focus-visible,#equipment-proposal button:focus-visible,#equipment-proposal select:focus-visible,#equipment-proposal textarea:focus-visible { outline:2px solid var(--eq-accent); outline-offset:2px; }
+    #equipment-proposal .eq-table-wrap { overflow-x:auto; }
+    #equipment-proposal table { width:100%; border-collapse:collapse; text-align:left; }
+    #equipment-proposal td,#equipment-proposal th { padding:var(--eq-cell,13px) 12px; border-bottom:1px solid var(--eq-line); white-space:nowrap; font-weight:400; }
+    #equipment-proposal th { background:var(--eq-soft); color:var(--eq-muted); }
+    #equipment-proposal .eq-footer { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:16px; color:var(--eq-muted); }
+    #equipment-proposal .eq-form { max-width:720px; }
+    #equipment-proposal .eq-selected { padding:16px 0; margin-bottom:20px; border-top:1px solid var(--eq-line); border-bottom:1px solid var(--eq-line); }
+    #equipment-proposal .eq-selected strong { font-weight:500; }
+    #equipment-proposal details { margin-top:10px; color:var(--eq-muted); }
+    #equipment-proposal summary { cursor:pointer; }
+    #equipment-proposal .eq-fields { display:grid; grid-template-columns:1fr 1fr; gap:16px 24px; }
+    #equipment-proposal .eq-wide { grid-column:1 / -1; }
+    #equipment-proposal textarea { resize:vertical; min-height:72px; }
+    #equipment-proposal .eq-actions { display:flex; justify-content:end; gap:10px; margin-top:24px; padding-top:16px; border-top:1px solid var(--eq-line); }
+    #equipment-proposal .eq-review { margin:0; }
+    #equipment-proposal .eq-review div { display:grid; grid-template-columns:150px 1fr; gap:12px; padding:12px 0; border-bottom:1px solid var(--eq-line); }
+    #equipment-proposal dt { color:var(--eq-muted); }
+    #equipment-proposal dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+    #equipment-proposal .eq-notice { padding:10px 0; color:var(--eq-accent); }
+    @media(max-width:600px) { #equipment-proposal main,#equipment-proposal header { padding:16px; } #equipment-proposal .eq-user { display:none; } #equipment-proposal .eq-fields { grid-template-columns:1fr; } #equipment-proposal .eq-wide { grid-column:auto; } #equipment-proposal .eq-review div { grid-template-columns:100px 1fr; } }
+    @media(pointer:coarse) { #equipment-proposal button,#equipment-proposal input,#equipment-proposal select { min-height:44px; } #equipment-proposal input,#equipment-proposal textarea { font-size:16px; } }
+  </style>
+  <header>
+    <strong>資産台帳</strong>
+    <nav aria-label="メインメニュー">
+      <button type="button" data-nav="devices" aria-current="page">機器一覧</button>
+      <button type="button" data-nav="history">履歴・台帳</button>
+    </nav>
+    <span class="eq-user">管理担当</span>
+  </header>
+  <main>
+    <div class="eq-notice" role="status" hidden></div>
+    <section data-screen="devices">
+      <div class="eq-heading"><h1>PC一覧</h1><button class="eq-button eq-primary" type="button" data-new>機器を登録</button></div>
+      <div class="eq-toolbar">
+        <label class="eq-search">機器を検索<input type="search" placeholder="管理番号・機種名・利用者" data-search></label>
+        <label>状態<select data-filter><option value="all">すべて</option><option value="available">貸出可能</option><option value="loaned">貸出中</option></select></label>
+      </div>
+      <div class="eq-table-wrap"><table><thead><tr><th>管理番号</th><th>機種名</th><th>状態</th><th>利用者</th><th>返却予定日</th><th>操作</th></tr></thead><tbody data-rows></tbody></table></div>
+      <div class="eq-footer"><span data-count></span><span>Excel同期済み</span></div>
+    </section>
+    <section data-screen="form" hidden class="eq-form">
+      <div class="eq-heading"><h1 data-form-title></h1><button type="button" class="eq-link" data-back>機器一覧へ戻る</button></div>
+      <div class="eq-selected" data-selected></div>
+      <form data-entry><div class="eq-fields" data-fields></div><div class="eq-actions"><button class="eq-button eq-primary" type="submit">内容を確認</button></div></form>
+    </section>
+    <section data-screen="review" hidden class="eq-form">
+      <div class="eq-heading"><h1>登録内容の確認</h1></div>
+      <dl class="eq-review" data-review></dl>
+      <div class="eq-actions"><button class="eq-button" type="button" data-edit>入力に戻る</button><button class="eq-button eq-primary" type="button" data-save>登録</button></div>
+    </section>
+    <section data-screen="history" hidden>
+      <div class="eq-heading"><h1>貸出・返却履歴</h1></div>
+      <div class="eq-table-wrap"><table><thead><tr><th>日付</th><th>処理</th><th>管理番号</th><th>利用者</th><th>関連する貸出</th></tr></thead><tbody data-history></tbody></table></div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const root=document.getElementById('equipment-proposal');
+      const devices=[{id:'PC-001',name:'業務用ノートPC A',status:'loaned',user:'山田 太郎',department:'システム部',due:'2026-09-18',start:'2026-09-04',loan:'貸出 2026/09/04',cpu:'2.4 GHz',ram:'16 GB',os:'Windows 11'},{id:'PC-002',name:'業務用ノートPC B',status:'available',user:'',due:'',cpu:'2.6 GHz',ram:'16 GB',os:'Windows 11'},{id:'PC-003',name:'業務用ノートPC C',status:'available',user:'',due:'',cpu:'2.8 GHz',ram:'32 GB',os:'Windows 11'}];
+      const history=[{date:'2026-09-04',action:'貸出',id:'PC-001',user:'山田 太郎',link:'—'}];
+      let selected=null,operation='',values={},reviewRows=[];
+      const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      function show(name){root.querySelectorAll('[data-screen]').forEach(el=>el.hidden=el.dataset.screen!==name);root.querySelectorAll('[data-nav]').forEach(el=>{if(el.dataset.nav===(name==='history'?'history':'devices'))el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});}
+      function renderList(){const q=root.querySelector('[data-search]').value.toLowerCase();const filter=root.querySelector('[data-filter]').value;const rows=devices.filter(d=>(filter==='all'||d.status===filter)&&[d.id,d.name,d.user].join(' ').toLowerCase().includes(q));root.querySelector('[data-rows]').innerHTML=rows.map(d=>`<tr><td>${escape(d.id)}</td><td>${escape(d.name)}</td><td>${d.status==='loaned'?'貸出中':'貸出可能'}</td><td>${escape(d.user||'—')}</td><td>${escape(d.due||'—')}</td><td><button type="button" class="eq-link" data-device="${escape(d.id)}">${d.status==='loaned'?'返却する':'貸出する'}</button></td></tr>`).join('')||'<tr><td colspan="6">該当する機器はありません</td></tr>';root.querySelector('[data-count]').textContent=`${rows.length} / ${devices.length}件`;}
+      const input=(name,label,type='text',value='',required=false)=>`<label>${label}<input name="${name}" type="${type}" value="${escape(value)}" ${required?'required':''}></label>`;
+      function openForm(id){selected=devices.find(d=>d.id===id)||null;operation=selected?(selected.status==='loaned'?'return':'loan'):'new';root.querySelector('.eq-notice').hidden=true;root.querySelector('[data-form-title]').textContent={return:'PCを返却',loan:'PCを貸出',new:'PCを登録'}[operation];const summary=root.querySelector('[data-selected]');summary.hidden=!selected;summary.innerHTML=selected?`<strong>${escape(selected.id)}　${escape(selected.name)}</strong>${operation==='return'?`<p>利用者：${escape(selected.user)}　${escape(selected.department)}<br>貸出日：${escape(selected.start)}　返却予定日：${escape(selected.due||'未設定')}</p>`:''}<details><summary>機器の詳細</summary><p>CPU ${escape(selected.cpu)} ／ メモリ ${escape(selected.ram)} ／ ${escape(selected.os)}</p></details>`:'';let fields='';if(operation==='new'){fields=input('id','管理番号','text','',true)+input('name','機種名','text','',true)+input('cpu','CPU（GHz）')+input('ram','メモリ（GB）')+input('os','OS');}else if(operation==='loan'){fields=input('user','利用者','text','',true)+input('department','所属部署')+input('date','貸出日','date','2026-09-10',true)+input('due','返却予定日','date')+input('purpose','利用目的');}else{fields=input('date','返却日','date','2026-09-10',true)+'<label>返却時の状態<select name="condition" required><option value="">選択してください</option><option>問題なし</option><option>傷・汚れあり</option><option>故障あり</option></select></label>';}fields+='<label class="eq-wide">メモ<textarea name="notes"></textarea></label>';root.querySelector('[data-fields]').innerHTML=fields;show('form');}
+      root.addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;if(button.dataset.device)openForm(button.dataset.device);if(button.hasAttribute('data-new'))openForm(null);if(button.hasAttribute('data-back'))show('devices');if(button.hasAttribute('data-edit'))show('form');if(button.dataset.nav){if(button.dataset.nav==='history')renderHistory();show(button.dataset.nav);}if(button.hasAttribute('data-save'))save();});
+      root.querySelector('[data-search]').addEventListener('input',renderList);root.querySelector('[data-filter]').addEventListener('change',renderList);
+      root.querySelector('[data-entry]').addEventListener('submit',event=>{event.preventDefault();values=Object.fromEntries(new FormData(event.target));if(operation==='new'&&devices.some(d=>d.id===values.id)){const field=event.target.elements.id;field.setCustomValidity('この管理番号は登録済みです。');field.reportValidity();field.addEventListener('input',()=>field.setCustomValidity(''),{once:true});return;}reviewRows=[['処理',{return:'返却',loan:'貸出',new:'機器登録'}[operation]],['管理番号',selected?.id||values.id],['機種名',selected?.name||values.name]];if(operation==='return')reviewRows.push(['利用者',selected.user],['元の貸出',selected.loan],['返却日',values.date],['返却時の状態',values.condition]);if(operation==='loan')reviewRows.push(['利用者',values.user],['所属部署',values.department||'未入力'],['貸出日',values.date],['返却予定日',values.due||'未設定'],['利用目的',values.purpose||'未入力']);if(operation==='new')reviewRows.push(['CPU（GHz）',values.cpu||'未入力'],['メモリ（GB）',values.ram||'未入力'],['OS',values.os||'未入力']);reviewRows.push(['メモ',values.notes||'未入力']);root.querySelector('[data-review]').innerHTML=reviewRows.map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('');root.querySelector('[data-save]').textContent={return:'返却を登録',loan:'貸出を登録',new:'機器を登録'}[operation];show('review');});
+      function save(){const label={return:'返却',loan:'貸出',new:'機器登録'}[operation];if(operation==='new'){devices.push({id:values.id,name:values.name,status:'available',user:'',due:'',cpu:values.cpu||'未入力',ram:values.ram||'未入力',os:values.os||'未入力'});}else{history.unshift({date:values.date,action:label,id:selected.id,user:operation==='return'?selected.user:values.user,link:operation==='return'?selected.loan:'—'});if(operation==='return'){selected.status='available';selected.user='';selected.due='';}else{Object.assign(selected,{status:'loaned',user:values.user,department:values.department,start:values.date,due:values.due,loan:`貸出 ${values.date}`});}}renderList();show('devices');const notice=root.querySelector('.eq-notice');notice.textContent=`${label}を登録しました。`;notice.hidden=false;}
+      function renderHistory(){root.querySelector('[data-history]').innerHTML=history.map(h=>`<tr><td>${escape(h.date)}</td><td>${escape(h.action)}</td><td>${escape(h.id)}</td><td>${escape(h.user)}</td><td>${escape(h.link)}</td></tr>`).join('');}
+      renderList();
+      const design={spacing:'standard'};
+      function applyDesign(){root.style.setProperty('--eq-cell',design.spacing==='compact'?'9px':'13px');}
+      applyDesign();
+      if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:applyDesign});tweak.addSelect(design,'spacing',{label:'一覧の行間',options:[{label:'標準',value:'standard'},{label:'コンパクト',value:'compact'}]});}
+    })();
+  </script>
+</div>

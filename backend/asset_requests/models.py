@@ -221,7 +221,26 @@ class ApprovedApplication(models.Model):
     created_at = models.DateTimeField("登録日時", auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField("更新日時", auto_now=True)
 
+    source_application = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="reused_applications", verbose_name="機器情報の参照元申請",
+    )
+    related_loan = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="referenced_returns", verbose_name="元の貸出申請",
+    )
+
+    @property
+    def source_application_reference(self):
+        return self.source_application.reference_number if self.source_application_id else ""
+
+    @property
+    def related_loan_reference(self):
+        return self.related_loan.reference_number if self.related_loan_id else ""
+
     revision = models.PositiveIntegerField("版番号", default=1, editable=False)
+    client_request_id = models.UUIDField(null=True, blank=True, unique=True, editable=False)
+    creation_fingerprint = models.CharField(max_length=64, blank=True, editable=False)
     is_cancelled = models.BooleanField("取消済み", default=False, db_index=True)
     cancellation_reason = models.TextField("取消理由", blank=True)
 

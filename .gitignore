@@ -38,3 +38,4 @@ media/
 # Generated documents and temporary verification files
 output/
 tmp/
+*.inspect.ndjson

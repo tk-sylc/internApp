@@ -68,7 +68,7 @@ export const TYPES = {
 export const USAGE_FIELDS = {
   purchase: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
   loan: [['usage_start_date', '利用開始日', 'date'], ['usage_end_date', '利用終了日', 'date'], ['purpose', '目的', 'textarea'], ['location', '利用場所']],
-  return: [['usage_end_date', '利用終了日', 'date'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']], ['location', '利用場所']],
+  return: [['usage_end_date', '返却日', 'date'], ['condition', '返却時の状態', 'select', ['問題なし', '傷・汚れあり', '故障あり']], ['location', '返却先・保管場所']],
   disposal: [['disposal_date', '廃棄日', 'date'], ['disposal_reason', '廃棄理由', 'textarea'], ['disposal_method', '廃棄方法'], ['location', '利用場所']],
 }
 
@@ -80,6 +80,20 @@ export const OPERATION_FIELDS = {
 }
 
 export const DEPARTMENTS = ['営業部', '総務部', 'システム部']
+const REQUEST_TYPE_FIELDS = new Set(['acquisition_method', 'borrowed_from', 'virus_check'])
+export const getEquipmentFields = (type) => [
+  ['management_number', '管理番号'],
+  ...(TYPES[type]?.fields ?? []),
+  ...(TYPES[type]?.secondaryFields ?? []),
+].filter(([key]) => !REQUEST_TYPE_FIELDS.has(key))
+
+export const getRequestFields = (type, operation) => [
+  ...(OPERATION_FIELDS[operation] ?? []).filter(([key]) => key !== 'management_number'),
+  ...(USAGE_FIELDS[operation] ?? []),
+  ...(TYPES[type]?.fields ?? []).filter(([key]) => REQUEST_TYPE_FIELDS.has(key)),
+  ...(TYPES[type]?.secondaryFields ?? []).filter(([key]) => REQUEST_TYPE_FIELDS.has(key)),
+]
+
 export const newForm = (operation) => ({
   operation_type: operation,
   application_type: 'pc',
@@ -87,5 +101,7 @@ export const newForm = (operation) => ({
   department: '',
   details: {},
   notes: '',
+  source_application: null,
+  related_loan: null,
 })
 

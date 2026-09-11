@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowRight, Check, CheckCircle2, FileSpreadsheet,
+  CheckCircle2, FileSpreadsheet,
   KeyRound, LoaderCircle, LogIn, LogOut, Mail, PackageOpen,
   Search, X,
 } from 'lucide-react'
-import { OPERATIONS, TYPES, USAGE_FIELDS, OPERATION_FIELDS, DEPARTMENTS, newForm } from './formConfig'
-import Field from './ApplicationField'
+import { OPERATIONS, TYPES } from './formConfig'
+import RegisterFlow from './RegisterFlow'
 import LedgerWorkspace, { LedgerSyncSummary } from './LedgerWorkspace'
-import { apiRequest, useActionSignal, useApiResource } from './ledgerApi'
+import { apiRequest, useApiResource } from './ledgerApi'
 import './App.css'
 
 function csrfToken() {
@@ -141,102 +141,26 @@ function Header({ user, onLogout }) {
   return <header className="app-header"><div className="brand"><FileSpreadsheet /> 社内機器管理</div><span className="header-title">資産台帳</span><div className="header-user"><span>{user?.email}</span><button onClick={onLogout} title="ログアウト"><LogOut /></button></div></header>
 }
 
-function Dashboard({ records, loading, error, onRefresh, onNew, onRead, onLedger }) {
+function Dashboard({ records, loading, error, onRefresh, onNew, onRead }) {
   const [query, setQuery] = useState('')
   const visible = records.filter((record) => `${record.reference_number} ${record.applicant_name} ${record.department} ${(TYPES[record.application_type]?.label || 'その他')} ${OPERATIONS[record.operation_type]?.label}`.toLowerCase().includes(query.toLowerCase()))
 
   return (
     <main className="workspace">
-      <section className="dashboard-head"><span className="eyebrow">QUICK ENTRY</span><h1>何を記録しますか？</h1><p>処理を選ぶと、必要な項目だけが表示されます。</p></section>
+      <section className="dashboard-head"><h1>申請を登録</h1></section>
       <section className="operation-grid">
         {Object.entries(OPERATIONS).map(([key, operation]) => {
-          const Icon = operation.icon
-          return <button key={key} className={`operation-card ${operation.tone}`} onClick={() => onNew(key)}><span><Icon /></span><div><strong>{operation.label}</strong><small>{operation.description}</small></div><ArrowRight /></button>
+          return <button key={key} className="operation-card" onClick={() => onNew(key)}><div><strong>{operation.label}</strong><small>{operation.description}</small></div></button>
         })}
       </section>
-      <div className="dashboard-ledger-link"><div><strong>登録済みの内容を確認する</strong><p>機器ごとの台帳全体を見て、修正・取消・履歴の確認ができます。</p></div><button className="button secondary" onClick={onLedger}><FileSpreadsheet />台帳を確認<ArrowRight /></button></div><section className="records-card">
-        <div className="section-head"><div><span className="eyebrow">RECENT</span><h2>最近の登録</h2></div><label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="受付番号・氏名で検索" /></label></div>
+      <section className="records-card">
+        <div className="section-head"><h2>最近の登録</h2><label className="search"><Search aria-hidden="true" /><input aria-label="最近の登録を検索" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="受付番号・氏名で検索" /></label></div>
         {error ? <div className="ledger-error"><div className="alert error" role="alert">{error}</div><button className="button secondary" onClick={onRefresh}>再読み込み</button></div> : loading ? <div className="empty"><LoaderCircle className="spin" />読み込み中</div> : visible.length === 0 ? <div className="empty"><FileSpreadsheet /><strong>{query ? '該当する登録はありません' : 'まだ登録はありません'}</strong></div> : <div className="table-wrap"><table><thead><tr><th>受付番号</th><th>処理</th><th>機器</th><th>申請者</th><th>部署</th><th>登録責任者</th></tr></thead><tbody>{visible.map((record) => <tr key={record.id}><td><button className="row-detail-button" onClick={() => onRead(record)}>{record.reference_number}</button></td><td><span className={`operation-chip ${record.operation_type}`}>{OPERATIONS[record.operation_type]?.label || '貸出'}</span></td><td>{(TYPES[record.application_type]?.label || 'その他')}</td><td>{record.applicant_name || '—'}</td><td>{record.department || '—'}</td><td><strong>{record.entered_by_name}</strong><small className="operator-email">{record.entered_by_email}</small></td></tr>)}</tbody></table></div>}
       </section>
     </main>
   )
 }
 
-function Stepper({ step }) {
-  return <ol className="stepper">{['内容入力', '最終確認'].map((label, index) => <li key={label} className={index + 1 <= step ? 'active' : ''}><span>{index + 1 < step ? <Check /> : index + 1}</span>{label}</li>)}</ol>
-}
-
-function RegisterFlow({ operationKey, operator, onCancel, onComplete, onUnauthorized, registerLeaveGuard }) {
-  const [step, setStep] = useState(1)
-  const [form, setForm] = useState(() => newForm(operationKey))
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const getSignal = useActionSignal()
-  const isDirty = Boolean(form.applicant_name || form.department || form.notes || Object.values(form.details).some((value) => value !== ''))
-  useEffect(() => registerLeaveGuard(() => {
-    if (busy) return false
-    return !isDirty || window.confirm('入力中の登録内容を破棄して画面を移動しますか？')
-  }), [registerLeaveGuard, isDirty, busy])
-  const operation = OPERATIONS[operationKey]
-  const selectedType = TYPES[form.application_type]
-  const fields = [
-    ...selectedType.fields,
-    ...OPERATION_FIELDS[operationKey],
-    ...USAGE_FIELDS[operationKey],
-    ...(selectedType.secondaryFields ?? []),
-  ]
-  const operatorName = operator.profile?.display_name || operator.user?.email
-  const operatorEmail = operator.user?.email
-
-  const setDetail = (key, value) => setForm((current) => ({ ...current, details: { ...current.details, [key]: value } }))
-  const next = () => {
-    setError('')
-    setStep((current) => current + 1)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-  const submit = async () => {
-    const signal = getSignal()
-    setBusy(true); setError('')
-    try {
-      const response = await fetch('/api/approved-applications/', {
-        method: 'POST', signal,
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-        body: JSON.stringify({
-          operation_type: form.operation_type,
-          application_type: form.application_type,
-          applicant_name: form.applicant_name,
-          department: form.department,
-          details: form.details,
-          notes: form.notes,
-        }),
-      })
-      const body = await readJson(response)
-      if (response.status === 401 || body.code === 'authentication_required') onUnauthorized()
-      if (signal.aborted) return
-      if (!response.ok) throw new Error(errorText(body, '登録できませんでした。'))
-      onComplete(body)
-    } catch (requestError) {
-      if (signal.aborted) return
-      setError(requestError.message || 'サーバーへ接続できませんでした。')
-    } finally {
-      if (!signal.aborted) setBusy(false)
-    }
-  }
-
-  return (
-    <main className="flow-page">
-      <div className="flow-top"><button className="text-button" onClick={onCancel}><ArrowLeft />一覧へ戻る</button><Stepper step={step} /></div>
-      <section className="flow-card">
-        <div className={`flow-operation ${operation.tone}`}>{operation.label}</div>
-        {step === 1 && <><h1>{operation.label}内容を入力</h1><p className="lead">申請書を見ながら、分かる範囲を記載してください。</p><div className="form-grid"><div className="responsible-card wide"><span>登録責任者（変更不可）</span><strong>{operatorName}</strong><small>{operatorEmail}</small><p>ログイン中のアカウントが自動で記録されます。</p></div><label>機器種別<select value={form.application_type} onChange={(event) => setForm((current) => ({ ...current, application_type: event.target.value }))}>{Object.entries(TYPES).map(([key, type]) => <option key={key} value={key}>{type.label}</option>)}</select></label><label>申請者氏名<input value={form.applicant_name} onChange={(event) => setForm({ ...form, applicant_name: event.target.value })} /></label><label>所属部署<select value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })}><option value="">選択しない</option>{DEPARTMENTS.map((department) => <option key={department}>{department}</option>)}</select></label>{fields.map((field) => <Field key={field[0]} field={field} value={form.details[field[0]]} onChange={setDetail} />)}<label className="wide">担当者メモ<textarea rows="3" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label></div></>}
-        {step === 2 && <><h1>登録内容を確認</h1><p className="lead">未入力の項目は「未入力」と表示されます。このまま登録できます。</p><dl className="review-list"><div><dt>登録責任者</dt><dd>{operatorName}（{operatorEmail}）</dd></div><div><dt>処理</dt><dd>{operation.label}</dd></div><div><dt>機器種別</dt><dd>{TYPES[form.application_type].label}</dd></div><div><dt>申請者氏名</dt><dd>{form.applicant_name || '未入力'}</dd></div><div><dt>所属部署</dt><dd>{form.department || '未入力'}</dd></div>{fields.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{form.details[key] || '未入力'}</dd></div>)}</dl></>}
-        {error && <div className="alert error"><X />{error}</div>}
-        <div className="flow-actions">{step > 1 && <button className="button secondary" onClick={() => setStep(step - 1)}><ArrowLeft />戻る</button>}<span />{step < 2 ? <button className="button primary" onClick={next}>確認へ<ArrowRight /></button> : <button className="button primary" onClick={submit} disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <FileSpreadsheet />}台帳へ登録</button>}</div>
-      </section>
-    </main>
-  )
-}
 
 function Complete({ result, onDone, onLedger }) {
   const pending = result.ledger_synced === false || Boolean(result.ledger_warning)

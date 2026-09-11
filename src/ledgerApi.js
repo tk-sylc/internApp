@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 
+export function useBeforeUnload(shouldWarn) {
+  useEffect(() => {
+    if (!shouldWarn) return undefined
+    const warn = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [shouldWarn])
+}
+
 function csrfToken() {
   return document.cookie.split('; ').find((row) => row.startsWith('csrftoken='))?.split('=')[1] ?? ''
 }
 
-export async function apiRequest(url, { method = 'GET', body, signal, download = false } = {}) {
+export async function apiRequest(url, { method = 'GET', body, signal, download = false, headers = {} } = {}) {
   const response = await fetch(url, {
     method, signal, credentials: 'same-origin', cache: 'no-store',
-    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' ? { 'X-CSRFToken': csrfToken() } : {}) },
+    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' ? { 'X-CSRFToken': csrfToken() } : {}), ...headers },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   })
   if (response.ok && download) return response

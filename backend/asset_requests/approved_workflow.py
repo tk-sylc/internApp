@@ -1,5 +1,9 @@
 """Transactional edits and audit logging for the operator-facing ledger."""
 from copy import deepcopy
+import hashlib
+import json
+
+from django.db import IntegrityError, transaction
 
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -26,8 +30,9 @@ class CancellationInput(RevisionInput):
     reason = serializers.CharField(allow_blank=False, max_length=1000, trim_whitespace=True)
 
 
-SNAPSHOT_FIELDS = ("application_type", "operation_type", "applicant_name", "department", "details", "notes", "is_cancelled", "cancellation_reason")
+SNAPSHOT_FIELDS = ("application_type", "operation_type", "applicant_name", "department", "details", "notes", "is_cancelled", "cancellation_reason", "source_application_reference", "related_loan_reference")
 FIELD_LABELS = {"application_type": "機器種別", "operation_type": "処理区分", "applicant_name": "申請者氏名", "department": "所属部署", "notes": "担当者メモ", "is_cancelled": "取消状態", "cancellation_reason": "取消理由"}
+FIELD_LABELS.update({"source_application_reference": "機器情報の参照元申請", "related_loan_reference": "元の貸出申請"})
 DETAIL_LABELS = {key: label for columns in DETAIL_COLUMNS.values() for label, key in columns}
 DETAIL_LABELS.update({key: label for label, key in OPERATION_COLUMNS})
 DETAIL_LABELS["summary"] = "転記内容"
@@ -69,10 +74,39 @@ def _history(record, actor, action, before, reason=""):
     )
 
 
-def create_application(serializer, actor):
+def create_application(serializer, actor, request_id=None):
     name, email = actor_snapshot(actor)
+    fingerprint = hashlib.sha256(json.dumps(
+        serializer.validated_data, sort_keys=True, ensure_ascii=False,
+        separators=(",", ":"), default=lambda value: value.pk if isinstance(value, ApprovedApplication) else str(value),
+    ).encode("utf-8")).hexdigest() if request_id else ""
+
+    def previous_result():
+        previous = ApprovedApplication.objects.filter(client_request_id=request_id).first()
+        if previous is not None and (
+            previous.entered_by_id != actor.pk or previous.creation_fingerprint != fingerprint
+        ):
+            raise RevisionConflict("同じ送信番号で異なる登録はできません。保存済みの内容を確認してください。")
+        return previous
+
     with lock_ledgers([serializer.validated_data["application_type"]]) as states:
-        record = serializer.save(entered_by=actor, entered_by_name=name, entered_by_email=email)
+        if request_id:
+            previous = previous_result()
+            if previous is not None:
+                return previous
+        serializer.validate_references(serializer.validated_data)
+        try:
+            with transaction.atomic():
+                record = serializer.save(
+                    entered_by=actor, entered_by_name=name, entered_by_email=email,
+                    client_request_id=request_id, creation_fingerprint=fingerprint,
+                )
+        except IntegrityError:
+            # A unique key also protects callers that locked different ledgers.
+            previous = previous_result() if request_id else None
+            if previous is not None:
+                return previous
+            raise
         _history(record, actor, "create", {})
         mark_pending(states)
     return record

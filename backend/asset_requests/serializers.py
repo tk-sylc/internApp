@@ -54,7 +54,7 @@ APPROVED_TYPE_DETAIL_FIELDS = {
 }
 
 APPROVED_OPERATION_DETAIL_FIELDS = {
-    "purchase": {"quantity", "purpose"},
+    "purchase": {"management_number", "quantity", "purpose"},
     "loan": {
         "management_number",
         "quantity",
@@ -68,6 +68,19 @@ APPROVED_OPERATION_DETAIL_FIELDS = {
         "disposal_method",
     },
 }
+
+# Only stable equipment attributes are offered for reuse. Transaction fields
+# (people, dates, quantity, purpose, location and notes) never enter this list.
+APPROVED_EQUIPMENT_DETAIL_FIELDS = {
+    kind: (fields | {"management_number"}) - {"acquisition_method", "borrowed_from", "virus_check"}
+    for kind, fields in APPROVED_TYPE_DETAIL_FIELDS.items()
+}
+
+
+def equipment_number(details):
+    value = details.get("management_number", "")
+    return str(value).strip() if value is not None else ""
+
 
 APPROVED_COMMON_DETAIL_FIELDS = {
     "usage_start_date",
@@ -217,6 +230,8 @@ class SmartphoneRequestSerializer(BaseAssetRequestSerializer):
 
 class ApprovedApplicationSerializer(serializers.ModelSerializer):
     history = serializers.SerializerMethodField()
+    source_application_reference = serializers.CharField(read_only=True)
+    related_loan_reference = serializers.CharField(read_only=True)
     reference_number = serializers.CharField(read_only=True)
     entered_by_name = serializers.SerializerMethodField()
     entered_by_email = serializers.SerializerMethodField()
@@ -239,6 +254,10 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "revision",
             "is_cancelled",
             "cancellation_reason",
+            "source_application",
+            "source_application_reference",
+            "related_loan",
+            "related_loan_reference",
             "history",
         ]
         read_only_fields = [
@@ -257,8 +276,54 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
             "applicant_name": {"required": False, "allow_blank": True},
             "department": {"required": False, "allow_blank": True},
             "details": {"required": False},
-            "notes": {"required": False, "allow_blank": True},
+            # openpyxl truncates longer cell strings silently. Reject the
+            # value before saving so the database and exported Excel agree.
+            "notes": {"required": False, "allow_blank": True, "max_length": 32767},
         }
+
+    def validate_references(self, attrs):
+        """Validate changed links; unchanged provenance survives later cancellation.
+
+        Creation repeats this check inside the ledger lock, so a lookup result
+        cancelled before submission cannot be attached to a new application.
+        """
+        instance = self.instance
+        kind = attrs.get("application_type", getattr(instance, "application_type", None))
+        operation = attrs.get("operation_type", getattr(instance, "operation_type", None))
+        details = attrs.get("details", getattr(instance, "details", {}))
+        old_details = getattr(instance, "details", {})
+        source = attrs.get("source_application", getattr(instance, "source_application", None))
+        loan = attrs.get("related_loan", getattr(instance, "related_loan", None))
+        kind_changed = instance is None or kind != instance.application_type
+        source_changed = kind_changed or "source_application" in attrs
+        loan_changed = (
+            source_changed or "related_loan" in attrs or instance is None
+            or operation != instance.operation_type
+            or equipment_number(details) != equipment_number(old_details)
+        )
+
+        def current(value, field):
+            record = ApprovedApplication.objects.filter(pk=value.pk).first()
+            if record is None or record.is_cancelled:
+                raise serializers.ValidationError({field: "参照元の申請が取り消されています。機器情報を確認して選び直してください。"})
+            if record.pk == getattr(instance, "pk", None):
+                raise serializers.ValidationError({field: "自身の申請は参照できません。"})
+            if record.application_type != kind:
+                raise serializers.ValidationError({field: "同じ機器種別の申請を選んでください。"})
+            if field in attrs:
+                attrs[field] = record
+            return record
+
+        if source and source_changed:
+            source = current(source, "source_application")
+        if loan and loan_changed:
+            loan = current(loan, "related_loan")
+            if operation != "return" or loan.operation_type != "loan":
+                raise serializers.ValidationError({"related_loan": "返却の元となる貸出申請を選んでください。"})
+            number = equipment_number(details)
+            if number != equipment_number(loan.details) or (not number and (not source or source.pk != loan.pk)):
+                raise serializers.ValidationError({"related_loan": "元の貸出と管理番号が一致しません。管理番号がない場合は、元の貸出から機器情報を入力してください。"})
+        return attrs
 
     def get_history(self, obj):
         if not self.context.get("include_history"):
@@ -344,4 +409,4 @@ class ApprovedApplicationSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"details": "各項目は10000文字以内にしてください。"})
 
         attrs["details"] = cleaned_details
-        return attrs
+        return self.validate_references(attrs)

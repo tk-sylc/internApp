@@ -140,6 +140,10 @@ def ledger_columns(application_type, records=()):
     if "_all" not in known:
         extras = sorted({key for record in records for key in record.details} - known)
         columns.extend({"key": "details." + key, "label": _safe_value(labels.get(key, key))} for key in extras)
+    columns.extend([
+        {"key": "source_application_reference", "label": "機器情報の参照元申請"},
+        {"key": "related_loan_reference", "label": "元の貸出申請"},
+    ])
     columns.append({"key": "notes", "label": "担当者メモ"})
     return columns
 
@@ -167,7 +171,7 @@ def ledger_records(application_type, include_cancelled=False):
     queryset = ApprovedApplication.objects.filter(application_type=application_type)
     if not include_cancelled:
         queryset = queryset.filter(is_cancelled=False)
-    return list(queryset.select_related("entered_by__profile").order_by("pk"))
+    return list(queryset.select_related("entered_by__profile", "source_application", "related_loan").order_by("pk"))
 
 
 def ledger_preview(application_type, include_cancelled=False):
@@ -206,8 +210,10 @@ def _excel_datetime(value):
     """Excelが扱えないタイムゾーン情報を外し、設定中の現地時刻にする。"""
 
     if timezone.is_aware(value):
-        return timezone.localtime(value).replace(tzinfo=None)
-    return value
+        value = timezone.localtime(value).replace(tzinfo=None)
+    # The preview displays whole seconds. Excel rounds sub-millisecond values,
+    # which could otherwise move a timestamp into the following second/day.
+    return value.replace(microsecond=0)
 
 
 def _operator_name(record):
